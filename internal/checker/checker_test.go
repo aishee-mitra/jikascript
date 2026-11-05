@@ -261,3 +261,42 @@ values = [3, 4];`)
 		t.Fatalf("expected array reassignment rejection, got %v", err)
 	}
 }
+
+func TestCheckRejectsMixedBareAndValueReturns(t *testing.T) {
+	program, err := parser.ParseProgram(`function test(flag) {
+  if (flag) { return 1; }
+  return;
+}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "mixes bare and value returns") {
+		t.Fatalf("expected mixed return contract error, got %v", err)
+	}
+}
+
+func TestCheckRejectsInconsistentReturnTypes(t *testing.T) {
+	program, err := parser.ParseProgram(`function test(flag) {
+  if (flag) { return 1; }
+  return "oops";
+}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "inconsistent return type") {
+		t.Fatalf("expected inconsistent return type error, got %v", err)
+	}
+}
+
+func TestCheckAllowsCompatibleNumericReturns(t *testing.T) {
+	program, err := parser.ParseProgram(`function test(flag) {
+  if (flag) { return 1; }
+  return 2.5;
+}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err != nil {
+		t.Fatalf("unexpected checker error: %v", err)
+	}
+}

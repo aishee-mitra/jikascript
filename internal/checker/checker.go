@@ -11,6 +11,9 @@ import (
 
 // Check validates the initial JikaScript subset with minimal semantic checks.
 func Check(program *ast.Program) error {
+	if err := validateFunctionReturnConsistency(program); err != nil {
+		return err
+	}
 	scopeStack := []map[string]string{{}}
 	taskNames := map[string]struct{}{}
 	functionReturns := inferFunctionObjectReturns(program)
@@ -21,6 +24,96 @@ func Check(program *ast.Program) error {
 		}
 	}
 	return nil
+}
+
+func validateFunctionReturnConsistency(program *ast.Program) error {
+	for _, stmt := range program.Statements {
+		fn, ok := stmt.(*ast.FunctionDecl)
+		if !ok {
+			continue
+		}
+		returns := collectReturns(fn.Body)
+		seenBare := false
+		var expectedType string
+		for _, ret := range returns {
+			if ret.Value == nil {
+				seenBare = true
+				continue
+			}
+			if seenBare {
+				return fmt.Errorf("line %d:%d: function '%s' mixes bare and value returns", ret.Pos.Line, ret.Pos.Column, fn.Name)
+			}
+			actualType, known := inferLiteralType(ret.Value, nil)
+			if !known {
+				continue
+			}
+			if expectedType == "" {
+				expectedType = actualType
+				continue
+			}
+			if !returnTypeCompatible(expectedType, actualType) {
+				return fmt.Errorf("line %d:%d: inconsistent return type in function '%s': expected %s, got %s", ret.Pos.Line, ret.Pos.Column, fn.Name, expectedType, actualType)
+			}
+			if isNumericType(expectedType) && isNumericType(actualType) {
+				expectedType = mergeNumericType(expectedType, actualType)
+			}
+		}
+		if seenBare {
+			for _, ret := range returns {
+				if ret.Value != nil {
+					return fmt.Errorf("line %d:%d: function '%s' mixes bare and value returns", ret.Pos.Line, ret.Pos.Column, fn.Name)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func collectReturns(stmts []ast.Stmt) []*ast.ReturnStmt {
+	out := make([]*ast.ReturnStmt, 0)
+	var walk func(ast.Stmt)
+	walk = func(stmt ast.Stmt) {
+		switch node := stmt.(type) {
+		case *ast.ReturnStmt:
+			out = append(out, node)
+		case *ast.IfStmt:
+			for _, s := range node.Then {
+				walk(s)
+			}
+			for _, s := range node.Else {
+				walk(s)
+			}
+		case *ast.WhileStmt:
+			for _, s := range node.Body {
+				walk(s)
+			}
+		case *ast.DoWhileStmt:
+			for _, s := range node.Body {
+				walk(s)
+			}
+		case *ast.ForStmt:
+			for _, s := range node.Body {
+				walk(s)
+			}
+		case *ast.SwitchStmt:
+			for _, c := range node.Cases {
+				for _, s := range c.Body {
+					walk(s)
+				}
+			}
+		case *ast.BlockStmt:
+			for _, s := range node.Statements {
+				walk(s)
+			}
+		case *ast.TaskDecl:
+			// Callback return statements are scoped to the callback, not enclosing function.
+			return
+		}
+	}
+	for _, stmt := range stmts {
+		walk(stmt)
+	}
+	return out
 }
 
 // pushScope appends a fresh lexical scope. It copies the existing stack so
@@ -815,4 +908,18 @@ func equalityComparable(left, right string) bool {
 		return true
 	}
 	return false
+}
+
+func returnTypeCompatible(expected, actual string) bool {
+	if typeCompatible(expected, actual) || typeCompatible(actual, expected) {
+		return true
+	}
+	return isNumericType(expected) && isNumericType(actual)
+}
+
+func mergeNumericType(a, b string) string {
+	if a == "float32" || b == "float32" {
+		return "float32"
+	}
+	return "int32"
 }
