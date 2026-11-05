@@ -125,6 +125,12 @@ Unknown properties, duplicate property names, and incompatible property assignme
 compile-time errors. Functions may accept and return inferred object records when their
 object arguments and returned object literals are statically resolvable.
 
+## Equality semantics (v0.1)
+
+- `==` and `===` are strict, non-coercing equality for supported types.
+- `!=` and `!==` are strict inequality.
+- Mixed-type equality comparisons (for example `number` vs `string`) are compile-time errors.
+
 ## Validation commands
 
 ```bash

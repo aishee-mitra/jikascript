@@ -846,7 +846,9 @@ The checker should validate:
 - Function calls.
 - Function arguments.
 - Return types.
+- Function return consistency (no mixed bare/value returns in one function).
 - Type compatibility.
+- Equality-operand compatibility under the strict v0.1 equality policy.
 - Unsupported language constructs.
 - Hardware API usage.
 - Task declarations.
