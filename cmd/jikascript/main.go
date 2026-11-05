@@ -79,6 +79,9 @@ func runTranspile(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateTarget(opts.target); err != nil {
+		return err
+	}
 	if opts.input == "" {
 		return fmt.Errorf("missing input file")
 	}
@@ -112,20 +115,19 @@ func runBuild(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := validateTarget(opts.target); err != nil {
+		return err
+	}
 	if opts.input == "" {
 		return fmt.Errorf("missing input file")
 	}
-	base := strings.TrimSuffix(filepath.Base(opts.input), filepath.Ext(opts.input))
-	outputDir := filepath.Join("build")
+	outputDir, base := resolveBuildOutput(opts.input, opts.output)
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return err
 	}
 	generated := filepath.Join(outputDir, base+".c")
 	if err := runTranspile([]string{opts.input, "-o", generated, "--target", opts.target}); err != nil {
 		return err
-	}
-	if opts.target != "ch32v003" {
-		return fmt.Errorf("unsupported target %q", opts.target)
 	}
 	if err := buildCH32fun(generated, outputDir, base, opts.optimize); err != nil {
 		return err
@@ -198,6 +200,23 @@ func parseOptions(args []string) (cliOptions, error) {
 		return opts, fmt.Errorf("unsupported optimize mode %q (use size or speed)", opts.optimize)
 	}
 	return opts, nil
+}
+
+func validateTarget(target string) error {
+	if target != ch32fun.NewTarget().Name {
+		return fmt.Errorf("unsupported target %q", target)
+	}
+	return nil
+}
+
+func resolveBuildOutput(inputPath, output string) (string, string) {
+	base := strings.TrimSuffix(filepath.Base(inputPath), filepath.Ext(inputPath))
+	if strings.TrimSpace(output) == "" {
+		return filepath.Join("build"), base
+	}
+	trimmed := strings.TrimSpace(output)
+	withoutExt := strings.TrimSuffix(trimmed, filepath.Ext(trimmed))
+	return filepath.Dir(withoutExt), filepath.Base(withoutExt)
 }
 
 func buildCH32fun(sourceC, outputDir, base, optimize string) error {

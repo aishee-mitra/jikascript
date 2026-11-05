@@ -54,3 +54,24 @@ func TestRunCheckRejectsNonMicInput(t *testing.T) {
 		t.Fatalf("expected .jika extension error, got %v", err)
 	}
 }
+
+func TestValidateTargetRejectsUnknown(t *testing.T) {
+	err := validateTarget("invalid")
+	if err == nil || !strings.Contains(err.Error(), "unsupported target") {
+		t.Fatalf("expected unsupported target error, got %v", err)
+	}
+}
+
+func TestResolveBuildOutputDefault(t *testing.T) {
+	dir, base := resolveBuildOutput("examples/blink.jika", "")
+	if dir != "build" || base != "blink" {
+		t.Fatalf("unexpected default build output: dir=%q base=%q", dir, base)
+	}
+}
+
+func TestResolveBuildOutputWithCustomPath(t *testing.T) {
+	dir, base := resolveBuildOutput("examples/blink.jika", "dist/fw/blink.elf")
+	if dir != "dist/fw" || base != "blink" {
+		t.Fatalf("unexpected custom build output: dir=%q base=%q", dir, base)
+	}
+}
