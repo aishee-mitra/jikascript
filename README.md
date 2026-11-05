@@ -131,11 +131,87 @@ object arguments and returned object literals are statically resolvable.
 - `!=` and `!==` are strict inequality.
 - Mixed-type equality comparisons (for example `number` vs `string`) are compile-time errors.
 
+## Scalar and function typing (v0.1)
+
+Declarations without annotations are inferred and emitted with matching C types:
+
+| Inferred JikaScript type | Generated C type |
+| ------------------------ | ---------------- |
+| string                   | `const char *`   |
+| boolean                  | `bool`           |
+| integer literal          | `int32_t`        |
+| float literal            | `float`          |
+
+Explicit annotations (`int8`, `uint8`, `int16`, `uint16`, `int32`, `uint32`,
+`float32`, `boolean`, `string`) retain their mapped C types.
+
+Top-level functions are precollected before bodies are checked, so calls may
+appear before declarations. Parameter types are inferred from all call sites
+(incompatible call-site types are rejected), and the return type is inferred
+from all return expressions, including returns inside `if`, loops, blocks, and
+switch cases. Mixed bare/value returns and incompatible value returns are
+compile-time errors. A function whose parameter or return type cannot be
+resolved is rejected rather than silently emitted as `int`. Generated C uses
+matching parameter and return types.
+
+## Scheduler capacity (v0.1)
+
+The portable scheduler's task capacity is a build-time macro in
+`runtime/periodic/periodic.h`:
+
+```c
+#ifndef PERIODIC_MAX_TASKS
+#define PERIODIC_MAX_TASKS 8U
+#endif
+```
+
+Override it at build time, for example:
+
+```bash
+gcc -DPERIODIC_MAX_TASKS=16 ...
+```
+
+Generated JikaScript C wraps every `periodic_task_add()` call so a failed
+registration (invalid interval, duplicate task, or full capacity) enters a
+shared non-returning `jikascript_fail()` helper instead of silently dropping
+the task.
+
+## CH32fun timer adapter (target-only)
+
+When a CH32fun checkout is configured (`JIKASCRIPT_CH32FUN`), the target build
+includes a timer adapter under `targets/ch32fun/runtime/` exposing exactly one
+initializer:
+
+```c
+void periodic_ch32fun_init(void);
+```
+
+The adapter configures a hardware timer interrupt at 1 ms; the ISR calls only
+`periodic_tick_ms(1U)`. Application callbacks are never executed from
+interrupt context — generated startup calls, in order:
+
+```c
+periodic_init();
+periodic_ch32fun_init();
+```
+
+## Validation status labels
+
+- **Host-tested**: verified with the Go test suite and host C99 compilation
+  (`go test ./...` plus the portable scheduler test below). All features
+  documented above are host-tested.
+- **Target-compiled**: verified by compiling firmware with the RISC-V
+  toolchain against a CH32fun checkout. Not yet claimed for any feature.
+- **Hardware-verified**: verified by flashing a physical CH32V003 board and
+  observing behavior. Not yet claimed for any feature.
+
 ## Validation commands
 
 ```bash
 go test ./...
 gcc -std=c99 -Wall -Wextra runtime/periodic/test_periodic.c runtime/periodic/periodic.c -I runtime/periodic -o /tmp/periodic_test && /tmp/periodic_test
+# Capacity override check:
+gcc -std=c99 -Wall -Wextra -DPERIODIC_MAX_TASKS=2 runtime/periodic/test_periodic_capacity.c runtime/periodic/periodic.c -I runtime/periodic -o /tmp/periodic_cap && /tmp/periodic_cap
 ```
 
 ## Scheduler time source integration
