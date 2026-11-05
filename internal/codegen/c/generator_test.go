@@ -112,8 +112,8 @@ readings[0] = latest;
 	if !strings.Contains(out, "js_readings_set") || !strings.Contains(out, "js_readings_get") {
 		t.Fatal("expected indexed read/write helpers")
 	}
-	if !strings.Contains(out, "jikascript_array_fail") {
-		t.Fatal("expected shared array failure handler")
+	if !strings.Contains(out, "jikascript_fail") {
+		t.Fatal("expected shared failure handler")
 	}
 	if !strings.Contains(out, "index < 0") || !strings.Contains(out, ">= js_readings.length") {
 		t.Fatal("expected runtime bounds checks against logical length")
@@ -349,5 +349,22 @@ led.output();`)
 	}
 	if strings.Contains(out, `" pc1 "`) || strings.Contains(out, `"pc1"`) {
 		t.Fatalf("expected raw pin literal to be replaced by canonical form, got:\n%s", out)
+	}
+}
+
+func TestGenerateGuardsTaskRegistration(t *testing.T) {
+	program, err := parser.ParseProgram(`task("blink", 1000, () => { });`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	out, err := Generate(program)
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+	if !strings.Contains(out, "if (!periodic_task_add(&jikascript_task_blink_task, jikascript_task_blink, 1000)) {\n        jikascript_fail();\n    }") {
+		t.Fatalf("expected guarded task registration, got:\n%s", out)
+	}
+	if !strings.Contains(out, "static void jikascript_fail(void) {\n    while (1) { }\n}") {
+		t.Fatalf("expected shared non-returning jikascript_fail helper, got:\n%s", out)
 	}
 }

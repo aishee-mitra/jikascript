@@ -2,8 +2,6 @@
 
 #include <stddef.h>
 
-#define PERIODIC_MAX_TASKS 8U
-
 static volatile uint32_t g_millis = 0U;
 static periodic_task_t *g_tasks[PERIODIC_MAX_TASKS];
 static size_t g_task_count = 0U;

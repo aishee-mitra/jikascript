@@ -344,12 +344,15 @@ func Generate(program *ast.Program) (string, error) {
 	}
 
 	if len(arrayDecls) > 0 {
-		b.WriteString("static void jikascript_array_fail(void) {\n")
-		b.WriteString("    while (1) { }\n")
-		b.WriteString("}\n\n")
 		for _, meta := range arrayDecls {
 			b.WriteString(renderArrayHelpers(meta))
 		}
+	}
+
+	if len(taskHandlers) > 0 || len(arrayDecls) > 0 {
+		b.WriteString("static void jikascript_fail(void) {\n")
+		b.WriteString("    while (1) { }\n")
+		b.WriteString("}\n\n")
 	}
 
 	for _, task := range taskHandlers {
@@ -362,7 +365,7 @@ func Generate(program *ast.Program) (string, error) {
 	b.WriteString("int main(void) {\n")
 	b.WriteString("    periodic_init();\n")
 	for _, task := range taskHandlers {
-		b.WriteString(fmt.Sprintf("    periodic_task_add(&%s_task, %s, %s);\n", task.name, task.name, task.interval))
+		b.WriteString(fmt.Sprintf("    if (!periodic_task_add(&%s_task, %s, %s)) {\n        jikascript_fail();\n    }\n", task.name, task.name, task.interval))
 	}
 	for _, stmt := range mainStmts {
 		b.WriteString(stmt)
@@ -978,20 +981,20 @@ func renderArrayHelpers(meta arrayMeta) string {
 	name := sanitizeName(meta.Name)
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("static %s %s_get(int32_t index) {\n", meta.CType, name))
-	b.WriteString(fmt.Sprintf("    if (index < 0 || (uint32_t)index >= %s.length) { jikascript_array_fail(); }\n", name))
+	b.WriteString(fmt.Sprintf("    if (index < 0 || (uint32_t)index >= %s.length) { jikascript_fail(); }\n", name))
 	b.WriteString(fmt.Sprintf("    return %s.data[index];\n", name))
 	b.WriteString("}\n\n")
 	b.WriteString(fmt.Sprintf("static void %s_set(int32_t index, %s value) {\n", name, meta.CType))
-	b.WriteString(fmt.Sprintf("    if (index < 0 || (uint32_t)index >= %s.length) { jikascript_array_fail(); }\n", name))
+	b.WriteString(fmt.Sprintf("    if (index < 0 || (uint32_t)index >= %s.length) { jikascript_fail(); }\n", name))
 	b.WriteString(fmt.Sprintf("    %s.data[index] = value;\n", name))
 	b.WriteString("}\n\n")
 	b.WriteString(fmt.Sprintf("static void %s_push(%s value) {\n", name, meta.CType))
-	b.WriteString(fmt.Sprintf("    if (%s.length >= %s.capacity) { jikascript_array_fail(); }\n", name, name))
+	b.WriteString(fmt.Sprintf("    if (%s.length >= %s.capacity) { jikascript_fail(); }\n", name, name))
 	b.WriteString(fmt.Sprintf("    %s.data[%s.length] = value;\n", name, name))
 	b.WriteString(fmt.Sprintf("    %s.length++;\n", name))
 	b.WriteString("}\n\n")
 	b.WriteString(fmt.Sprintf("static %s %s_pop(void) {\n", meta.CType, name))
-	b.WriteString(fmt.Sprintf("    if (%s.length == 0) { jikascript_array_fail(); }\n", name))
+	b.WriteString(fmt.Sprintf("    if (%s.length == 0) { jikascript_fail(); }\n", name))
 	b.WriteString(fmt.Sprintf("    %s.length--;\n", name))
 	b.WriteString(fmt.Sprintf("    return %s.data[%s.length];\n", name, name))
 	b.WriteString("}\n\n")

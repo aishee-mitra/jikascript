@@ -4,6 +4,12 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+// Maximum number of concurrently registered tasks. Override at build time
+// with -DPERIODIC_MAX_TASKS=<n> to size the scheduler for the application.
+#ifndef PERIODIC_MAX_TASKS
+#define PERIODIC_MAX_TASKS 8U
+#endif
+
 typedef void (*periodic_callback_t)(void);
 
 typedef struct {
