@@ -2,6 +2,8 @@
 
 #include <stddef.h>
 
+#define PERIODIC_MAX_TASKS 8U
+
 static uint32_t g_millis = 0U;
 static periodic_task_t *g_tasks[PERIODIC_MAX_TASKS];
 static size_t g_task_count = 0U;
@@ -11,11 +13,28 @@ static bool task_due(const periodic_task_t *task, uint32_t now) {
         return false;
     }
 
-    if (task->last_run_ms == 0U) {
+    if (task->last_run_ms == UINT32_MAX) {
         return true;
     }
 
     return (uint32_t)(now - task->last_run_ms) >= task->interval_ms;
+}
+
+static void task_advance_deadline(periodic_task_t *task, uint32_t now) {
+    if (task == NULL || task->interval_ms == 0U) {
+        return;
+    }
+
+    if (task->last_run_ms == UINT32_MAX) {
+        task->last_run_ms = now;
+        return;
+    }
+
+    uint32_t elapsed = (uint32_t)(now - task->last_run_ms);
+    uint32_t missed = elapsed / task->interval_ms;
+    if (missed > 0U) {
+        task->last_run_ms += missed * task->interval_ms;
+    }
 }
 
 void periodic_init(void) {
@@ -43,27 +62,11 @@ bool periodic_task_add(periodic_task_t *task, periodic_callback_t callback, uint
 
     task->callback = callback;
     task->interval_ms = interval_ms;
-    task->last_run_ms = 0U;
+    task->last_run_ms = UINT32_MAX;
     task->enabled = true;
 
     g_tasks[g_task_count++] = task;
     return true;
-}
-
-void periodic_task_remove(periodic_task_t *task) {
-    for (size_t i = 0; i < g_task_count; ++i) {
-        if (g_tasks[i] == task) {
-            g_tasks[i] = NULL;
-            for (size_t j = i + 1; j < g_task_count; ++j) {
-                g_tasks[j - 1] = g_tasks[j];
-            }
-            g_tasks[g_task_count - 1] = NULL;
-            g_task_count -= 1U;
-            task->enabled = false;
-            task->callback = NULL;
-            return;
-        }
-    }
 }
 
 void periodic_run(void) {
@@ -76,7 +79,7 @@ void periodic_run(void) {
         }
 
         if (task_due(task, now)) {
-            task->last_run_ms = now;
+            task_advance_deadline(task, now);
             task->callback();
         }
     }
