@@ -39,10 +39,10 @@ scheduler.start();
 		t.Fatalf("parse error: %v", err)
 	}
 	out := Generate(program)
-	if !strings.Contains(out, "gpio_output(led);") {
+	if !strings.Contains(out, "gpio_output(js_led);") {
 		t.Fatal("expected led.output() to map to gpio_output")
 	}
-	if !strings.Contains(out, "gpio_toggle(led);") {
+	if !strings.Contains(out, "gpio_toggle(js_led);") {
 		t.Fatal("expected led.toggle() to map to gpio_toggle")
 	}
 	if strings.Contains(out, "scheduler.start();") {
@@ -51,10 +51,10 @@ scheduler.start();
 	if strings.Contains(out, "static const int led = pin(\"PC1\");") {
 		t.Fatal("pin() top-level const init should not be emitted as non-C99 static initializer")
 	}
-	if !strings.Contains(out, "static int led;") {
+	if !strings.Contains(out, "static int js_led;") {
 		t.Fatal("expected deferred top-level declaration for runtime pin initialization")
 	}
-	if !strings.Contains(out, "led = pin(\"PC1\");") {
+	if !strings.Contains(out, "js_led = pin(\"PC1\");") {
 		t.Fatal("expected runtime initialization assignment for pin binding")
 	}
 }
@@ -86,26 +86,26 @@ readings[0] = latest;
 		t.Fatalf("parse error: %v", err)
 	}
 	out := Generate(program)
-	if !strings.Contains(out, "readings_push") || !strings.Contains(out, "readings_pop") {
+	if !strings.Contains(out, "js_readings_push") || !strings.Contains(out, "js_readings_pop") {
 		t.Fatal("expected array helper functions for push/pop")
 	}
 	if !strings.Contains(out, ".length") || !strings.Contains(out, ".capacity") {
 		t.Fatal("expected logical length and fixed capacity fields")
 	}
-	if !strings.Contains(out, "readings_set") || !strings.Contains(out, "readings_get") {
+	if !strings.Contains(out, "js_readings_set") || !strings.Contains(out, "js_readings_get") {
 		t.Fatal("expected indexed read/write helpers")
 	}
 	if !strings.Contains(out, "jikascript_array_fail") {
 		t.Fatal("expected shared array failure handler")
 	}
-	if !strings.Contains(out, "index < 0") || !strings.Contains(out, ">= readings.length") {
+	if !strings.Contains(out, "index < 0") || !strings.Contains(out, ">= js_readings.length") {
 		t.Fatal("expected runtime bounds checks against logical length")
 	}
-	if !strings.Contains(out, "readings.length >= readings.capacity") {
+	if !strings.Contains(out, "js_readings.length >= js_readings.capacity") {
 		t.Fatal("expected push capacity guard")
 	}
-	pushPos := strings.Index(out, "readings_push(30);")
-	popPos := strings.Index(out, "latest = readings_pop();")
+	pushPos := strings.Index(out, "js_readings_push(30);")
+	popPos := strings.Index(out, "js_latest = js_readings_pop();")
 	if pushPos == -1 || popPos == -1 || pushPos > popPos {
 		t.Fatal("expected top-level array operations to preserve source order")
 	}
@@ -123,7 +123,7 @@ device.enabled = false;
 	if !strings.Contains(out, "typedef struct {") || !strings.Contains(out, "const char * name;") || !strings.Contains(out, "int32_t pin;") || !strings.Contains(out, "bool enabled;") {
 		t.Fatalf("expected C record definition, got:\n%s", out)
 	}
-	if !strings.Contains(out, ".name = \"sensor-1\"") || !strings.Contains(out, "device.pin = 4;") || !strings.Contains(out, "device.enabled = false;") {
+	if !strings.Contains(out, ".name = \"sensor-1\"") || !strings.Contains(out, "js_device.pin = 4;") || !strings.Contains(out, "js_device.enabled = false;") {
 		t.Fatalf("expected object initializer and direct property writes, got:\n%s", out)
 	}
 	if strings.Contains(out, "const jikascript_object") {
@@ -139,10 +139,10 @@ const updated = setPin(device);`)
 		t.Fatalf("parse error: %v", err)
 	}
 	out := Generate(program)
-	if !strings.Contains(out, "static jikascript_object_1_t setPin(jikascript_object_1_t device)") {
+	if !strings.Contains(out, "static jikascript_object_1_t js_setPin(jikascript_object_1_t js_device)") {
 		t.Fatalf("expected object parameter and return type, got:\n%s", out)
 	}
-	if !strings.Contains(out, "updated = setPin(device);") {
+	if !strings.Contains(out, "js_updated = js_setPin(js_device);") {
 		t.Fatalf("expected object-return assignment, got:\n%s", out)
 	}
 }
@@ -153,7 +153,32 @@ func TestGenerateInferredArrayOfObjects(t *testing.T) {
 		t.Fatalf("parse error: %v", err)
 	}
 	out := Generate(program)
-	if !strings.Contains(out, "jikascript_object_1_t data[2]") || !strings.Contains(out, "devices.data[0] = (jikascript_object_1_t){ .pin = 1 };") {
+	if !strings.Contains(out, "jikascript_object_1_t data[2]") || !strings.Contains(out, "js_devices.data[0] = (jikascript_object_1_t){ .pin = 1 };") {
 		t.Fatalf("expected statically allocated array of record values, got:\n%s", out)
+	}
+}
+
+func TestGenerateManglesMainBinding(t *testing.T) {
+	program, err := parser.ParseProgram(`let main = 1;`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	out := Generate(program)
+	if strings.Contains(out, "int main = 1;") {
+		t.Fatalf("user binding should not collide with C main symbol, got:\n%s", out)
+	}
+	if !strings.Contains(out, "static int js_main = 1;") {
+		t.Fatalf("expected mangled user binding name, got:\n%s", out)
+	}
+}
+
+func TestGenerateMapsHighLowConstants(t *testing.T) {
+	program, err := parser.ParseProgram(`const led = pin("PC1"); led.write(HIGH); led.write(LOW);`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	out := Generate(program)
+	if !strings.Contains(out, "gpio_write(js_led, 1);") || !strings.Contains(out, "gpio_write(js_led, 0);") {
+		t.Fatalf("expected HIGH/LOW constants to map to C integer values, got:\n%s", out)
 	}
 }

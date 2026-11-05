@@ -19,6 +19,8 @@ var generatedArrays map[string]arrayMeta
 var generatedObjects map[string]objectMeta
 var generatedFunctions map[string]functionMeta
 var generatedObjectBindings map[string]string
+var mangledIdentifiers map[string]string
+var usedCIdentifiers map[string]string
 
 type objectMeta struct {
 	Shape  string
@@ -38,6 +40,8 @@ func Generate(program *ast.Program) string {
 	generatedObjects = map[string]objectMeta{}
 	generatedFunctions = map[string]functionMeta{}
 	generatedObjectBindings = map[string]string{}
+	mangledIdentifiers = map[string]string{}
+	usedCIdentifiers = map[string]string{}
 	collectObjectTypes(program)
 	collectObjectBindings(program)
 	collectFunctionTypes(program)
@@ -172,23 +176,50 @@ func emitFunction(node *ast.FunctionDecl) string {
 }
 
 func renderVarDecl(node interface{}, isConst bool) string {
-	var decl string
 	switch v := node.(type) {
 	case *ast.VarDecl:
-		if meta, ok := objectDeclMeta(v.Value); ok {
-			return fmt.Sprintf("%s %s = %s;\n", meta.CName, sanitizeName(v.Name), renderExpr(v.Value))
-		}
-		decl = fmt.Sprintf("static %s %s = %s;\n", typeName(v.Type, false), sanitizeName(v.Name), renderExpr(v.Value))
+		return renderLocalDecl(v.Name, v.Type, v.Value, false)
 	case *ast.ConstDecl:
-		if meta, ok := objectDeclMeta(v.Value); ok {
-			return fmt.Sprintf("%s %s = %s;\n", meta.CName, sanitizeName(v.Name), renderExpr(v.Value))
-		}
-		decl = fmt.Sprintf("static %s %s = %s;\n", typeName(v.Type, true), sanitizeName(v.Name), renderExpr(v.Value))
+		return renderLocalDecl(v.Name, v.Type, v.Value, true)
 	}
-	if isConst {
-		return strings.Replace(decl, "static int ", "static const int ", 1)
+	return ""
+}
+
+// renderLocalDecl renders a function-local variable declaration. Locals are
+// never static: they live on the stack and are initialized at runtime.
+// `const` freezes the JikaScript binding, not record contents, so object
+// locals are never C-const (property writes must remain legal).
+func renderLocalDecl(name, declaredType string, value ast.Expr, isConst bool) string {
+	constPrefix := ""
+	if isConst && !isObjectValue(value) {
+		constPrefix = "const "
 	}
-	return decl
+	if meta, ok := objectDeclMeta(value); ok {
+		return fmt.Sprintf("%s%s %s = %s;\n", constPrefix, meta.CName, sanitizeName(name), renderExpr(value))
+	}
+	if cType, ok := functionReturnCType(value); ok {
+		return fmt.Sprintf("%s%s %s = %s;\n", constPrefix, cType, sanitizeName(name), renderExpr(value))
+	}
+	if isPinCall(value) {
+		// pin() returns a hardware handle; declare then initialize separately
+		// so the call stays inside the function body.
+		return fmt.Sprintf("%sint %s = %s;\n", constPrefix, sanitizeName(name), renderExpr(value))
+	}
+	return fmt.Sprintf("%s%s %s = %s;\n", constPrefix, typeName(declaredType, isConst), sanitizeName(name), renderExpr(value))
+}
+
+func isObjectValue(expr ast.Expr) bool {
+	_, ok := objectDeclMeta(expr)
+	return ok
+}
+
+func isPinCall(expr ast.Expr) bool {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	ident, ok := call.Function.(*ast.Identifier)
+	return ok && ident.Name == "pin"
 }
 
 func renderTopLevelDecl(node interface{}, isConst bool) (string, string) {
@@ -199,7 +230,7 @@ func renderTopLevelDecl(node interface{}, isConst bool) (string, string) {
 			return fmt.Sprintf("static %s %s;\n", cType, name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
 		}
 		if isStaticInitSafe(v.Value) {
-			return renderVarDecl(v, false), ""
+			return fmt.Sprintf("static %s %s = %s;\n", typeName(v.Type, false), name, renderExpr(v.Value)), ""
 		}
 		return fmt.Sprintf("static %s %s;\n", typeName(v.Type, false), name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
 	case *ast.ConstDecl:
@@ -208,7 +239,7 @@ func renderTopLevelDecl(node interface{}, isConst bool) (string, string) {
 			return fmt.Sprintf("static %s %s;\n", cType, name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
 		}
 		if isStaticInitSafe(v.Value) {
-			return renderVarDecl(v, true), ""
+			return fmt.Sprintf("static const %s %s = %s;\n", typeName(v.Type, true), name, renderExpr(v.Value)), ""
 		}
 		return fmt.Sprintf("static %s %s;\n", typeName(v.Type, false), name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
 	default:
@@ -314,7 +345,16 @@ func renderStmt(stmt ast.Stmt, indent string) string {
 func renderExpr(expr ast.Expr) string {
 	switch node := expr.(type) {
 	case *ast.Identifier:
-		return sanitizeName(node.Name)
+		switch node.Name {
+		case "HIGH":
+			return "1"
+		case "LOW":
+			return "0"
+		}
+		if mangled, ok := mangledIdentifiers[node.Name]; ok {
+			return mangled
+		}
+		return node.Name
 	case *ast.NumberLiteral:
 		return node.Value
 	case *ast.StringLiteral:
@@ -325,6 +365,15 @@ func renderExpr(expr ast.Expr) string {
 		}
 		return "false"
 	case *ast.CallExpr:
+		if ident, ok := node.Function.(*ast.Identifier); ok && ident.Name == "pin" {
+			if _, shadowed := mangledIdentifiers["pin"]; !shadowed {
+				var args []string
+				for _, arg := range node.Args {
+					args = append(args, renderExpr(arg))
+				}
+				return "pin(" + strings.Join(args, ", ") + ")"
+			}
+		}
 		if call := renderSelectorCall(node); call != "" {
 			return call
 		}
@@ -339,7 +388,7 @@ func renderExpr(expr ast.Expr) string {
 				return sanitizeName(meta.Name) + ".length"
 			}
 		}
-		return renderExpr(node.Object) + "." + node.Field
+		return renderExpr(node.Object) + "." + sanitizeFieldName(node.Field)
 	case *ast.IndexExpr:
 		if ident, ok := node.Object.(*ast.Identifier); ok {
 			if meta, exists := generatedArrays[ident.Name]; exists {
@@ -376,7 +425,7 @@ func renderExpr(expr ast.Expr) string {
 	case *ast.ObjectLiteralExpr:
 		parts := make([]string, 0, len(node.Properties))
 		for _, property := range node.Properties {
-			parts = append(parts, "."+sanitizeName(property.Name)+" = "+renderExpr(property.Value))
+			parts = append(parts, "."+sanitizeFieldName(property.Name)+" = "+renderExpr(property.Value))
 		}
 		if meta, ok := objectDeclMeta(node); ok {
 			return "(" + meta.CName + "){ " + strings.Join(parts, ", ") + " }"
@@ -421,12 +470,101 @@ func typeName(t string, constDecl bool) string {
 }
 
 func sanitizeName(name string) string {
-	if name == "" {
-		return "anon"
+	if existing, ok := mangledIdentifiers[name]; ok {
+		return existing
 	}
-	name = strings.ReplaceAll(name, "-", "_")
-	name = strings.ReplaceAll(name, ".", "_")
-	return name
+	normalized := normalizeIdentifier(name)
+	if normalized == "" {
+		normalized = "anon"
+	}
+	candidate := "js_" + normalized
+	for isReservedCIdentifier(candidate) {
+		candidate = "js_" + candidate
+	}
+	base := candidate
+	if owner, exists := usedCIdentifiers[candidate]; exists && owner != name {
+		for i := 2; ; i++ {
+			candidate = fmt.Sprintf("%s_%d", base, i)
+			if isReservedCIdentifier(candidate) {
+				continue
+			}
+			if _, used := usedCIdentifiers[candidate]; !used {
+				break
+			}
+		}
+	}
+	mangledIdentifiers[name] = candidate
+	usedCIdentifiers[candidate] = name
+	return candidate
+}
+
+func sanitizeFieldName(name string) string {
+	normalized := normalizeIdentifier(name)
+	if normalized == "" {
+		return "field"
+	}
+	if isImplementationReservedIdentifier(normalized) {
+		return "field_" + strings.TrimLeft(normalized, "_")
+	}
+	if _, reserved := cKeywordIdentifiers[normalized]; reserved {
+		return normalized + "_field"
+	}
+	return normalized
+}
+
+func normalizeIdentifier(name string) string {
+	var b strings.Builder
+	for i, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || r == '_' || (i > 0 && r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			continue
+		}
+		if i == 0 && r >= '0' && r <= '9' {
+			b.WriteString("_")
+			b.WriteRune(r)
+			continue
+		}
+		b.WriteRune('_')
+	}
+	return b.String()
+}
+
+func isReservedCIdentifier(name string) bool {
+	if isImplementationReservedIdentifier(name) {
+		return true
+	}
+	if _, ok := reservedCIdentifiers[name]; ok {
+		return true
+	}
+	_, ok := cKeywordIdentifiers[name]
+	return ok
+}
+
+func isImplementationReservedIdentifier(name string) bool {
+	if strings.HasPrefix(name, "jikascript_") {
+		return true
+	}
+	if strings.HasPrefix(name, "__") {
+		return true
+	}
+	if len(name) >= 2 && name[0] == '_' && (name[1] == '_' || (name[1] >= 'A' && name[1] <= 'Z')) {
+		return true
+	}
+	return false
+}
+
+var reservedCIdentifiers = map[string]struct{}{
+	"main": {}, "pin": {}, "gpio_output": {}, "gpio_input": {}, "gpio_toggle": {}, "gpio_read": {}, "gpio_write": {},
+	"periodic_init": {}, "periodic_task_add": {}, "periodic_run": {}, "periodic_millis": {}, "periodic_tick_ms": {},
+	"periodic_set_critical_section": {}, "true": {}, "false": {},
+}
+
+var cKeywordIdentifiers = map[string]struct{}{
+	"auto": {}, "break": {}, "case": {}, "char": {}, "const": {}, "continue": {}, "default": {}, "do": {},
+	"double": {}, "else": {}, "enum": {}, "extern": {}, "float": {}, "for": {}, "goto": {}, "if": {},
+	"inline": {}, "int": {}, "long": {}, "register": {}, "restrict": {}, "return": {}, "short": {}, "signed": {},
+	"sizeof": {}, "static": {}, "struct": {}, "switch": {}, "typedef": {}, "union": {}, "unsigned": {}, "void": {},
+	"volatile": {}, "while": {}, "_Bool": {}, "_Complex": {}, "_Imaginary": {},
 }
 
 func escape(s string) string {
@@ -482,7 +620,7 @@ func isStaticInitSafe(expr ast.Expr) bool {
 }
 
 func taskHandlerName(taskName string) string {
-	return "jikascript_task_" + sanitizeName(taskName)
+	return "jikascript_task_" + normalizeIdentifier(taskName)
 }
 
 func shouldSkipExprStmt(expr ast.Expr) bool {
@@ -851,7 +989,7 @@ func renderObjectType(meta objectMeta) string {
 	var b strings.Builder
 	b.WriteString("typedef struct {\n")
 	for _, field := range meta.Fields {
-		b.WriteString(fmt.Sprintf("    %s %s;\n", typeName(objectFieldType(field.Value), false), sanitizeName(field.Name)))
+		b.WriteString(fmt.Sprintf("    %s %s;\n", typeName(objectFieldType(field.Value), false), sanitizeFieldName(field.Name)))
 	}
 	b.WriteString(fmt.Sprintf("} %s;\n", meta.CName))
 	return b.String()

@@ -5,7 +5,7 @@ led.output();
 button.input();
 
 task("button_check", 20, () => {
-    if (button.read() == 0) {
+    if (button.read() == LOW) {
         led.toggle();
     }
 });
