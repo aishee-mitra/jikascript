@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#define PERIODIC_MAX_TASKS 8U
+
 typedef void (*periodic_callback_t)(void);
 
 typedef struct {
@@ -15,6 +17,7 @@ typedef struct {
 
 void periodic_init(void);
 bool periodic_task_add(periodic_task_t *task, periodic_callback_t callback, uint32_t interval_ms);
+void periodic_task_remove(periodic_task_t *task);
 void periodic_run(void);
 uint32_t periodic_millis(void);
 
