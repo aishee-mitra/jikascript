@@ -1,0 +1,13 @@
+const led = pin("PC1");
+const button = pin("PD2");
+
+led.output();
+button.input();
+
+task("button_check", 20, () => {
+    if (button.read() == 0) {
+        led.toggle();
+    }
+});
+
+scheduler.start();

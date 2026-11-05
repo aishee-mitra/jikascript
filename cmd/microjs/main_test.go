@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseOptionsDefaults(t *testing.T) {
 	opts, err := parseOptions([]string{"examples/blink.mic"})
@@ -35,5 +38,19 @@ func TestParseOptionsRejectsUnknownOption(t *testing.T) {
 	_, err := parseOptions([]string{"examples/blink.mic", "--unknown"})
 	if err == nil {
 		t.Fatal("expected error for unknown option")
+	}
+}
+
+func TestParseOptionsRejectsUnknownOptimizeMode(t *testing.T) {
+	_, err := parseOptions([]string{"examples/blink.mic", "--optimize", "balanced"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported optimize mode") {
+		t.Fatalf("expected optimize validation error, got %v", err)
+	}
+}
+
+func TestRunCheckRejectsNonMicInput(t *testing.T) {
+	err := runCheck([]string{"example.txt"})
+	if err == nil || !strings.Contains(err.Error(), ".mic source file") {
+		t.Fatalf("expected .mic extension error, got %v", err)
 	}
 }

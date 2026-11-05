@@ -52,3 +52,13 @@ func TestCheckRejectsUnsupportedPinMethod(t *testing.T) {
 		t.Fatalf("expected unsupported pin method error, got %v", err)
 	}
 }
+
+func TestCheckRejectsDuplicateTaskNames(t *testing.T) {
+	program, err := parser.ParseProgram(`task("blink", 1000, () => { }); task("blink", 500, () => { });`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "duplicate task name") {
+		t.Fatalf("expected duplicate task error, got %v", err)
+	}
+}

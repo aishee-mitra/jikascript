@@ -21,6 +21,8 @@ func main() {
 
 	cmd := os.Args[1]
 	switch cmd {
+	case "-h", "--help", "help":
+		printUsage()
 	case "check":
 		if err := runCheck(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -54,16 +56,19 @@ func runCheck(args []string) error {
 		return fmt.Errorf("missing input file")
 	}
 	path := args[0]
+	if filepath.Ext(path) != ".mic" {
+		return fmt.Errorf("input must be a .mic source file: %s", path)
+	}
 	code, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 	program, err := parser.ParseProgram(string(code))
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", path, err)
 	}
 	if err := checker.Check(program); err != nil {
-		return err
+		return fmt.Errorf("%s: %w", path, err)
 	}
 	fmt.Printf("check: %s OK\n", path)
 	return nil
@@ -77,16 +82,19 @@ func runTranspile(args []string) error {
 	if opts.input == "" {
 		return fmt.Errorf("missing input file")
 	}
+	if filepath.Ext(opts.input) != ".mic" {
+		return fmt.Errorf("input must be a .mic source file: %s", opts.input)
+	}
 	code, err := os.ReadFile(opts.input)
 	if err != nil {
 		return err
 	}
 	program, err := parser.ParseProgram(string(code))
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", opts.input, err)
 	}
 	if err := checker.Check(program); err != nil {
-		return err
+		return fmt.Errorf("%s: %w", opts.input, err)
 	}
 	output := cgen.Generate(program)
 	if opts.output == "" {

@@ -11,15 +11,16 @@ import (
 // Check validates the initial MicroJS subset with minimal semantic checks.
 func Check(program *ast.Program) error {
 	scopeStack := []map[string]string{{}}
+	taskNames := map[string]struct{}{}
 	for _, stmt := range program.Statements {
-		if err := checkStmt(stmt, scopeStack); err != nil {
+		if err := checkStmt(stmt, scopeStack, taskNames); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func checkStmt(stmt ast.Stmt, scopeStack []map[string]string) error {
+func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[string]struct{}) error {
 	current := scopeStack[len(scopeStack)-1]
 	switch node := stmt.(type) {
 	case *ast.VarDecl:
@@ -63,7 +64,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string) error {
 			funcScope[param] = "param"
 		}
 		for _, s := range node.Body {
-			if err := checkStmt(s, append(scopeStack, funcScope)); err != nil {
+			if err := checkStmt(s, append(scopeStack, funcScope), taskNames); err != nil {
 				return err
 			}
 		}
@@ -72,12 +73,12 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string) error {
 			return err
 		}
 		for _, s := range node.Then {
-			if err := checkStmt(s, scopeStack); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames); err != nil {
 				return err
 			}
 		}
 		for _, s := range node.Else {
-			if err := checkStmt(s, scopeStack); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames); err != nil {
 				return err
 			}
 		}
@@ -86,13 +87,13 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string) error {
 			return err
 		}
 		for _, s := range node.Body {
-			if err := checkStmt(s, scopeStack); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames); err != nil {
 				return err
 			}
 		}
 	case *ast.DoWhileStmt:
 		for _, s := range node.Body {
-			if err := checkStmt(s, scopeStack); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames); err != nil {
 				return err
 			}
 		}
@@ -101,7 +102,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string) error {
 		}
 	case *ast.ForStmt:
 		if node.Init != nil {
-			if err := checkStmt(node.Init, scopeStack); err != nil {
+			if err := checkStmt(node.Init, scopeStack, taskNames); err != nil {
 				return err
 			}
 		}
@@ -111,7 +112,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string) error {
 			}
 		}
 		for _, s := range node.Body {
-			if err := checkStmt(s, scopeStack); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames); err != nil {
 				return err
 			}
 		}
@@ -121,10 +122,10 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string) error {
 			}
 		}
 	case *ast.TaskDecl:
-		if _, ok := current[node.Name]; ok {
-			return fmt.Errorf("line %d:%d: task '%s' already declared", node.Pos.Line, node.Pos.Column, node.Name)
+		if _, ok := taskNames[node.Name]; ok {
+			return fmt.Errorf("line %d:%d: duplicate task name '%s'", node.Pos.Line, node.Pos.Column, node.Name)
 		}
-		current[node.Name] = "task"
+		taskNames[node.Name] = struct{}{}
 		if err := checkExpr(node.Interval, scopeStack); err != nil {
 			return err
 		}
@@ -134,14 +135,14 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string) error {
 				callbackScope[param] = "callback-param"
 			}
 			for _, s := range node.Callback.Body {
-				if err := checkStmt(s, append(scopeStack, callbackScope)); err != nil {
+				if err := checkStmt(s, append(scopeStack, callbackScope), taskNames); err != nil {
 					return err
 				}
 			}
 		}
 	case *ast.BlockStmt:
 		for _, s := range node.Statements {
-			if err := checkStmt(s, scopeStack); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames); err != nil {
 				return err
 			}
 		}
@@ -217,7 +218,7 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 			callbackScope[param] = "arrow-param"
 		}
 		for _, s := range node.Body {
-			if err := checkStmt(s, append(scopeStack, callbackScope)); err != nil {
+			if err := checkStmt(s, append(scopeStack, callbackScope), map[string]struct{}{}); err != nil {
 				return err
 			}
 		}

@@ -1,0 +1,15 @@
+const led1 = pin("PC1");
+const led2 = pin("PC2");
+
+led1.output();
+led2.output();
+
+task("led1", 500, () => {
+    led1.toggle();
+});
+
+task("led2", 1000, () => {
+    led2.toggle();
+});
+
+scheduler.start();

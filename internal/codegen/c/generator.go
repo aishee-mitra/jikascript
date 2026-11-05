@@ -23,7 +23,7 @@ func Generate(program *ast.Program) string {
 		case *ast.FunctionDecl:
 			b.WriteString(emitFunction(node))
 		case *ast.TaskDecl:
-			taskName := sanitizeName(node.Name)
+			taskName := taskHandlerName(node.Name)
 			b.WriteString(fmt.Sprintf("static void %s(void) {\n", taskName))
 			for _, inner := range node.Callback.Body {
 				b.WriteString(renderStmt(inner, "    "))
@@ -250,6 +250,10 @@ func renderParams(params []string) string {
 		list = append(list, "int "+sanitizeName(p))
 	}
 	return strings.Join(list, ", ")
+}
+
+func taskHandlerName(taskName string) string {
+	return "microjs_task_" + sanitizeName(taskName)
 }
 
 func shouldSkipExprStmt(expr ast.Expr) bool {
