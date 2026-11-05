@@ -8,10 +8,16 @@ var validPins = map[string]struct{}{
 	"PA1": {}, "PA2": {},
 }
 
+// NormalizePin returns the canonical pin name: trimmed and uppercased.
+// All validation and generated C output must use this canonical form so that
+// every accepted source pin resolves to the same runtime pin identifier.
+func NormalizePin(name string) string {
+	return strings.ToUpper(strings.TrimSpace(name))
+}
+
 // IsValidPin reports whether the CH32V003 target supports the supplied pin name.
 func IsValidPin(name string) bool {
-	normalized := strings.ToUpper(strings.TrimSpace(name))
-	_, ok := validPins[normalized]
+	_, ok := validPins[NormalizePin(name)]
 	return ok
 }
 

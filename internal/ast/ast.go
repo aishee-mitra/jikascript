@@ -198,7 +198,11 @@ func (*NumberLiteral) exprNode() {}
 // StringLiteral is a static string literal.
 type StringLiteral struct {
 	Value string
-	Pos   Position
+	// CanonicalValue optionally holds the normalized form of Value (for
+	// example a canonical hardware pin name) that code generation must emit
+	// instead of the raw source text.
+	CanonicalValue string
+	Pos            Position
 }
 
 func (*StringLiteral) exprNode() {}

@@ -44,6 +44,22 @@ func TestCheckRejectsInvalidPin(t *testing.T) {
 	}
 }
 
+func TestCheckAcceptsPinNameVariants(t *testing.T) {
+	for _, source := range []string{
+		`const led = pin("PC1");`,
+		`const led = pin("pc1");`,
+		`const led = pin(" pc1 ");`,
+	} {
+		program, err := parser.ParseProgram(source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", source, err)
+		}
+		if err := Check(program); err != nil {
+			t.Fatalf("expected %q to pass check, got %v", source, err)
+		}
+	}
+}
+
 func TestCheckRejectsUnsupportedPinMethod(t *testing.T) {
 	program, err := parser.ParseProgram(`const led = pin("PC1"); led.pulse();`)
 	if err != nil {

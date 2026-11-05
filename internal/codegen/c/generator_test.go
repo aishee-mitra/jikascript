@@ -330,3 +330,24 @@ func TestGenerateRejectsUnsupportedArrayLiteralExpression(t *testing.T) {
 		t.Fatalf("expected explicit codegen error for unsupported array literal expression, got %v", genErr)
 	}
 }
+
+func TestGenerateEmitsCanonicalPinName(t *testing.T) {
+	program, err := parser.ParseProgram(`const led = pin(" pc1 ");
+led.output();`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := checker.Check(program); err != nil {
+		t.Fatalf("check error: %v", err)
+	}
+	out, err := Generate(program)
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+	if !strings.Contains(out, `js_led = pin("PC1");`) {
+		t.Fatalf("expected canonical pin name in generated C, got:\n%s", out)
+	}
+	if strings.Contains(out, `" pc1 "`) || strings.Contains(out, `"pc1"`) {
+		t.Fatalf("expected raw pin literal to be replaced by canonical form, got:\n%s", out)
+	}
+}

@@ -1069,6 +1069,7 @@ func classifyBinding(baseKind string, declaredType string, declaredCapacity int,
 			if !ch32fun.IsValidPin(pinName.Value) {
 				return "", fmt.Errorf("unknown hardware pin %q", pinName.Value)
 			}
+			pinName.CanonicalValue = ch32fun.NormalizePin(pinName.Value)
 			return "pin-" + baseKind, nil
 		}
 	}

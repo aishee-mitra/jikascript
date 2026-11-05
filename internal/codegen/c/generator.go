@@ -600,6 +600,9 @@ func renderExpr(expr ast.Expr) string {
 	case *ast.NumberLiteral:
 		return node.Value
 	case *ast.StringLiteral:
+		if node.CanonicalValue != "" {
+			return fmt.Sprintf("\"%s\"", escape(node.CanonicalValue))
+		}
 		return fmt.Sprintf("\"%s\"", escape(node.Value))
 	case *ast.BoolLiteral:
 		if node.Value {
