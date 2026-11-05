@@ -14,8 +14,9 @@ func Check(program *ast.Program) error {
 	scopeStack := []map[string]string{{}}
 	taskNames := map[string]struct{}{}
 	functionReturns := inferFunctionObjectReturns(program)
+	functionArity := inferFunctionArity(program)
 	for _, stmt := range program.Statements {
-		if err := checkStmt(stmt, scopeStack, taskNames, 0, 0, functionReturns); err != nil {
+		if err := checkStmt(stmt, scopeStack, taskNames, 0, 0, functionReturns, functionArity); err != nil {
 			return err
 		}
 	}
@@ -31,17 +32,17 @@ func pushScope(scopeStack []map[string]string) []map[string]string {
 }
 
 // checkBlock checks each statement of a block body inside a new lexical scope.
-func checkBlock(body []ast.Stmt, scopeStack []map[string]string, taskNames map[string]struct{}, loopDepth int, switchDepth int, functionReturns map[string]string) error {
+func checkBlock(body []ast.Stmt, scopeStack []map[string]string, taskNames map[string]struct{}, loopDepth int, switchDepth int, functionReturns map[string]string, functionArity map[string]int) error {
 	inner := pushScope(scopeStack)
 	for _, s := range body {
-		if err := checkStmt(s, inner, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
+		if err := checkStmt(s, inner, taskNames, loopDepth, switchDepth, functionReturns, functionArity); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[string]struct{}, loopDepth int, switchDepth int, functionReturns map[string]string) error {
+func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[string]struct{}, loopDepth int, switchDepth int, functionReturns map[string]string, functionArity map[string]int) error {
 	current := scopeStack[len(scopeStack)-1]
 	switch node := stmt.(type) {
 	case *ast.VarDecl:
@@ -54,7 +55,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		}
 		current[node.Name] = bindingKind
 		if node.Value != nil {
-			if err := checkExpr(node.Value, scopeStack); err != nil {
+			if err := checkExpr(node.Value, scopeStack, functionArity); err != nil {
 				return err
 			}
 		}
@@ -68,7 +69,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		}
 		current[node.Name] = bindingKind
 		if node.Value != nil {
-			if err := checkExpr(node.Value, scopeStack); err != nil {
+			if err := checkExpr(node.Value, scopeStack, functionArity); err != nil {
 				return err
 			}
 		}
@@ -88,53 +89,53 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		stack = append(stack, scopeStack...)
 		stack = append(stack, funcScope)
 		for _, s := range node.Body {
-			if err := checkStmt(s, stack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
+			if err := checkStmt(s, stack, taskNames, loopDepth, switchDepth, functionReturns, functionArity); err != nil {
 				return err
 			}
 		}
 	case *ast.IfStmt:
-		if err := checkExpr(node.Cond, scopeStack); err != nil {
+		if err := checkExpr(node.Cond, scopeStack, functionArity); err != nil {
 			return err
 		}
-		if err := checkBlock(node.Then, scopeStack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
+		if err := checkBlock(node.Then, scopeStack, taskNames, loopDepth, switchDepth, functionReturns, functionArity); err != nil {
 			return err
 		}
-		if err := checkBlock(node.Else, scopeStack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
+		if err := checkBlock(node.Else, scopeStack, taskNames, loopDepth, switchDepth, functionReturns, functionArity); err != nil {
 			return err
 		}
 	case *ast.WhileStmt:
-		if err := checkExpr(node.Cond, scopeStack); err != nil {
+		if err := checkExpr(node.Cond, scopeStack, functionArity); err != nil {
 			return err
 		}
-		if err := checkBlock(node.Body, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
+		if err := checkBlock(node.Body, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns, functionArity); err != nil {
 			return err
 		}
 	case *ast.DoWhileStmt:
-		if err := checkBlock(node.Body, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
+		if err := checkBlock(node.Body, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns, functionArity); err != nil {
 			return err
 		}
-		if err := checkExpr(node.Cond, scopeStack); err != nil {
+		if err := checkExpr(node.Cond, scopeStack, functionArity); err != nil {
 			return err
 		}
 	case *ast.ForStmt:
 		inner := pushScope(scopeStack)
 		if node.Init != nil {
-			if err := checkStmt(node.Init, inner, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
+			if err := checkStmt(node.Init, inner, taskNames, loopDepth+1, switchDepth, functionReturns, functionArity); err != nil {
 				return err
 			}
 		}
 		if node.Cond != nil {
-			if err := checkExpr(node.Cond, inner); err != nil {
+			if err := checkExpr(node.Cond, inner, functionArity); err != nil {
 				return err
 			}
 		}
 		for _, s := range node.Body {
-			if err := checkStmt(s, inner, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
+			if err := checkStmt(s, inner, taskNames, loopDepth+1, switchDepth, functionReturns, functionArity); err != nil {
 				return err
 			}
 		}
 		if node.Post != nil {
-			if err := checkExpr(node.Post, inner); err != nil {
+			if err := checkExpr(node.Post, inner, functionArity); err != nil {
 				return err
 			}
 		}
@@ -143,7 +144,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 			return fmt.Errorf("line %d:%d: duplicate task name '%s'", node.Pos.Line, node.Pos.Column, node.Name)
 		}
 		taskNames[node.Name] = struct{}{}
-		if err := checkExpr(node.Interval, scopeStack); err != nil {
+		if err := checkExpr(node.Interval, scopeStack, functionArity); err != nil {
 			return err
 		}
 		if node.Callback != nil {
@@ -155,22 +156,22 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 			stack = append(stack, scopeStack...)
 			stack = append(stack, callbackScope)
 			for _, s := range node.Callback.Body {
-				if err := checkStmt(s, stack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
+				if err := checkStmt(s, stack, taskNames, loopDepth, switchDepth, functionReturns, functionArity); err != nil {
 					return err
 				}
 			}
 		}
 	case *ast.SwitchStmt:
-		if err := checkExpr(node.Expr, scopeStack); err != nil {
+		if err := checkExpr(node.Expr, scopeStack, functionArity); err != nil {
 			return err
 		}
 		for _, c := range node.Cases {
 			if c.Value != nil {
-				if err := checkExpr(c.Value, scopeStack); err != nil {
+				if err := checkExpr(c.Value, scopeStack, functionArity); err != nil {
 					return err
 				}
 			}
-			if err := checkBlock(c.Body, scopeStack, taskNames, loopDepth, switchDepth+1, functionReturns); err != nil {
+			if err := checkBlock(c.Body, scopeStack, taskNames, loopDepth, switchDepth+1, functionReturns, functionArity); err != nil {
 				return err
 			}
 		}
@@ -183,13 +184,13 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 			return fmt.Errorf("line %d:%d: continue is only valid inside loops", node.Pos.Line, node.Pos.Column)
 		}
 	case *ast.BlockStmt:
-		return checkBlock(node.Statements, scopeStack, taskNames, loopDepth, switchDepth, functionReturns)
+		return checkBlock(node.Statements, scopeStack, taskNames, loopDepth, switchDepth, functionReturns, functionArity)
 	case *ast.ReturnStmt:
 		if node.Value != nil {
-			return checkExpr(node.Value, scopeStack)
+			return checkExpr(node.Value, scopeStack, functionArity)
 		}
 	case *ast.ExprStmt:
-		return checkExpr(node.Expr, scopeStack)
+		return checkExpr(node.Expr, scopeStack, functionArity)
 	case *ast.AssignStmt:
 		if _, ok := lookup(scopeStack, node.Target); !ok {
 			return fmt.Errorf("line %d:%d: undefined variable '%s'", node.Pos.Line, node.Pos.Column, node.Target)
@@ -197,12 +198,12 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		if isConstBinding(scopeStack, node.Target) {
 			return fmt.Errorf("line %d:%d: cannot assign to constant variable '%s'", node.Pos.Line, node.Pos.Column, node.Target)
 		}
-		return checkExpr(node.Value, scopeStack)
+		return checkExpr(node.Value, scopeStack, functionArity)
 	}
 	return nil
 }
 
-func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
+func checkExpr(expr ast.Expr, scopeStack []map[string]string, functionArity map[string]int) error {
 	switch node := expr.(type) {
 	case *ast.Identifier:
 		if builtin(node.Name) {
@@ -220,7 +221,7 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 						if len(node.Args) != 1 {
 							return fmt.Errorf("line %d:%d: push() expects one argument", node.Pos.Line, node.Pos.Column)
 						}
-						if err := checkExpr(node.Args[0], scopeStack); err != nil {
+						if err := checkExpr(node.Args[0], scopeStack, functionArity); err != nil {
 							return err
 						}
 						argType, ok := inferLiteralType(node.Args[0], scopeStack)
@@ -239,11 +240,16 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 				}
 			}
 		}
-		if err := checkExpr(node.Function, scopeStack); err != nil {
+		if err := checkExpr(node.Function, scopeStack, functionArity); err != nil {
 			return err
 		}
+		if fn, ok := node.Function.(*ast.Identifier); ok {
+			if expected, known := functionArity[fn.Name]; known && len(node.Args) != expected {
+				return fmt.Errorf("line %d:%d: function '%s' expects %d argument(s), got %d", node.Pos.Line, node.Pos.Column, fn.Name, expected, len(node.Args))
+			}
+		}
 		for _, arg := range node.Args {
-			if err := checkExpr(arg, scopeStack); err != nil {
+			if err := checkExpr(arg, scopeStack, functionArity); err != nil {
 				return err
 			}
 		}
@@ -267,7 +273,7 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 				}
 			}
 		}
-		return checkExpr(node.Object, scopeStack)
+		return checkExpr(node.Object, scopeStack, functionArity)
 	case *ast.IndexExpr:
 		ident, ok := node.Object.(*ast.Identifier)
 		if !ok {
@@ -277,7 +283,7 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 		if !exists || !isArrayBinding(kind) {
 			return fmt.Errorf("line %d:%d: '%s' is not an array", node.Pos.Line, node.Pos.Column, ident.Name)
 		}
-		if err := checkExpr(node.Index, scopeStack); err != nil {
+		if err := checkExpr(node.Index, scopeStack, functionArity); err != nil {
 			return err
 		}
 		if idx, ok := indexLiteral(node.Index); ok {
@@ -287,7 +293,7 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 		}
 		return nil
 	case *ast.BinaryExpr:
-		if err := checkExpr(node.Left, scopeStack); err != nil {
+		if err := checkExpr(node.Left, scopeStack, functionArity); err != nil {
 			return err
 		}
 		if isAssignmentOp(node.Op) {
@@ -334,14 +340,14 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 				}
 			}
 		}
-		if err := checkExpr(node.Right, scopeStack); err != nil {
+		if err := checkExpr(node.Right, scopeStack, functionArity); err != nil {
 			return err
 		}
 	case *ast.UnaryExpr:
 		if (node.Op == "++" || node.Op == "--") && isConstBinding(scopeStack, renderUnaryTarget(node.Expr)) {
 			return fmt.Errorf("line %d:%d: cannot assign to constant variable '%s'", node.Pos.Line, node.Pos.Column, renderUnaryTarget(node.Expr))
 		}
-		return checkExpr(node.Expr, scopeStack)
+		return checkExpr(node.Expr, scopeStack, functionArity)
 	case *ast.NumberLiteral, *ast.StringLiteral, *ast.BoolLiteral:
 		return nil
 	case *ast.ArrayLiteralExpr:
@@ -353,7 +359,7 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 			return fmt.Errorf("line %d:%d: unsupported array element type", node.Pos.Line, node.Pos.Column)
 		}
 		for _, elem := range node.Elements[1:] {
-			if err := checkExpr(elem, scopeStack); err != nil {
+			if err := checkExpr(elem, scopeStack, functionArity); err != nil {
 				return err
 			}
 			elemType, ok := inferLiteralType(elem, scopeStack)
@@ -369,7 +375,7 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 				return fmt.Errorf("line %d:%d: duplicate object property '%s'", property.Pos.Line, property.Pos.Column, property.Name)
 			}
 			seen[property.Name] = struct{}{}
-			if err := checkExpr(property.Value, scopeStack); err != nil {
+			if err := checkExpr(property.Value, scopeStack, functionArity); err != nil {
 				return err
 			}
 			if _, ok := inferLiteralType(property.Value, scopeStack); !ok {
@@ -386,7 +392,7 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 		stack = append(stack, scopeStack...)
 		stack = append(stack, callbackScope)
 		for _, s := range node.Body {
-			if err := checkStmt(s, stack, map[string]struct{}{}, 0, 0, map[string]string{}); err != nil {
+			if err := checkStmt(s, stack, map[string]struct{}{}, 0, 0, map[string]string{}, map[string]int{}); err != nil {
 				return err
 			}
 		}
@@ -519,6 +525,17 @@ func inferFunctionObjectReturns(program *ast.Program) map[string]string {
 		}
 	}
 	return returns
+}
+
+// inferFunctionArity maps each top-level function name to its parameter count.
+func inferFunctionArity(program *ast.Program) map[string]int {
+	arity := map[string]int{}
+	for _, stmt := range program.Statements {
+		if fn, ok := stmt.(*ast.FunctionDecl); ok {
+			arity[fn.Name] = len(fn.Params)
+		}
+	}
+	return arity
 }
 
 func isPinBinding(kind string) bool {
