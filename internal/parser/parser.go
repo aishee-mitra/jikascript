@@ -43,6 +43,9 @@ func New(tokens []lexer.Token) *Parser {
 func (p *Parser) Parse() (*ast.Program, error) {
 	program := &ast.Program{Statements: []ast.Stmt{}}
 	for !p.isEOF() {
+		if p.cur.Type == lexer.ILLEGAL {
+			return nil, fmt.Errorf("line %d:%d: illegal token %q", p.cur.Line, p.cur.Column, p.cur.Literal)
+		}
 		stmt, err := p.parseStatement()
 		if err != nil {
 			return nil, err

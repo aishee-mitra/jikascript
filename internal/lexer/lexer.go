@@ -1,7 +1,6 @@
 package lexer
 
 import (
-	"fmt"
 	"strings"
 	"unicode"
 )
@@ -42,7 +41,9 @@ func (l *Lexer) NextToken() Token {
 		}
 
 		if ch == '/' && l.peek() == '*' {
-			l.consumeMultiLineComment()
+			if tok, unterminated := l.consumeMultiLineComment(); unterminated {
+				return tok
+			}
 			continue
 		}
 
@@ -171,22 +172,24 @@ func (l *Lexer) consumeSingleLineComment() {
 	}
 }
 
-func (l *Lexer) consumeMultiLineComment() {
+func (l *Lexer) consumeMultiLineComment() (Token, bool) {
+	startLine, startColumn := l.line, l.column
 	l.advance()
 	l.advance()
-	for l.pos < len(l.source)-1 {
-		if l.source[l.pos] == '*' && l.source[l.pos+1] == '/' {
+	for l.pos < len(l.source) {
+		if l.source[l.pos] == '*' && l.pos+1 < len(l.source) && l.source[l.pos+1] == '/' {
 			l.advance()
 			l.advance()
-			return
-		}
-		if l.source[l.pos] == '\n' {
-			l.advance()
-			continue
+			return Token{}, false
 		}
 		l.advance()
 	}
-	panic(fmt.Sprintf("unterminated comment at line %d, column %d", l.line, l.column))
+	return Token{
+		Type:    ILLEGAL,
+		Literal: "unterminated block comment",
+		Line:    startLine,
+		Column:  startColumn,
+	}, true
 }
 
 func (l *Lexer) readOperator() (string, bool) {
