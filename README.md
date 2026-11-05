@@ -108,6 +108,7 @@ readings[0] = latest;
 ```
 
 `push()` is capacity-checked and `pop()`/index operations are bounds-checked in generated C.
+In v0.1, array declarations are top-level only and array-literal reassignment is rejected.
 
 ## Static objects (v0.1)
 

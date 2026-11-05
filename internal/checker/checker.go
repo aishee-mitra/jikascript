@@ -53,6 +53,9 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		if err != nil {
 			return fmt.Errorf("line %d:%d: %w", node.Pos.Line, node.Pos.Column, err)
 		}
+		if isArrayBinding(bindingKind) && len(scopeStack) > 1 {
+			return fmt.Errorf("line %d:%d: array declarations are only supported at top-level scope", node.Pos.Line, node.Pos.Column)
+		}
 		current[node.Name] = bindingKind
 		if node.Value != nil {
 			if err := checkExpr(node.Value, scopeStack, functionArity); err != nil {
@@ -66,6 +69,9 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		bindingKind, err := classifyBinding("const", node.Type, node.ArrayCapacity, node.Value, scopeStack, functionReturns)
 		if err != nil {
 			return fmt.Errorf("line %d:%d: %w", node.Pos.Line, node.Pos.Column, err)
+		}
+		if isArrayBinding(bindingKind) && len(scopeStack) > 1 {
+			return fmt.Errorf("line %d:%d: array declarations are only supported at top-level scope", node.Pos.Line, node.Pos.Column)
 		}
 		current[node.Name] = bindingKind
 		if node.Value != nil {
@@ -192,13 +198,22 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 	case *ast.ExprStmt:
 		return checkExpr(node.Expr, scopeStack, functionArity)
 	case *ast.AssignStmt:
-		if _, ok := lookup(scopeStack, node.Target); !ok {
+		binding, ok := lookup(scopeStack, node.Target)
+		if !ok {
 			return fmt.Errorf("line %d:%d: undefined variable '%s'", node.Pos.Line, node.Pos.Column, node.Target)
 		}
 		if isConstBinding(scopeStack, node.Target) {
 			return fmt.Errorf("line %d:%d: cannot assign to constant variable '%s'", node.Pos.Line, node.Pos.Column, node.Target)
 		}
-		return checkExpr(node.Value, scopeStack, functionArity)
+		if err := checkExpr(node.Value, scopeStack, functionArity); err != nil {
+			return err
+		}
+		expectedType, typed := scalarBindingType(binding)
+		actualType, known := inferLiteralType(node.Value, scopeStack)
+		if typed && known && !typeCompatible(expectedType, actualType) {
+			return fmt.Errorf("line %d:%d: type mismatch assigning '%s': expected %s, got %s", node.Pos.Line, node.Pos.Column, node.Target, expectedType, actualType)
+		}
+		return nil
 	}
 	return nil
 }
@@ -296,6 +311,13 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string, functionArity map[
 		if err := checkExpr(node.Left, scopeStack, functionArity); err != nil {
 			return err
 		}
+		if isEqualityOp(node.Op) {
+			leftType, leftKnown := inferLiteralType(node.Left, scopeStack)
+			rightType, rightKnown := inferLiteralType(node.Right, scopeStack)
+			if leftKnown && rightKnown && !equalityComparable(leftType, rightType) {
+				return fmt.Errorf("line %d:%d: cannot compare %s and %s with %s", node.Pos.Line, node.Pos.Column, leftType, rightType, node.Op)
+			}
+		}
 		if isAssignmentOp(node.Op) {
 			if sel, ok := node.Left.(*ast.SelectorExpr); ok {
 				ident, ok := sel.Object.(*ast.Identifier)
@@ -338,6 +360,16 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string, functionArity map[
 				if isConstBinding(scopeStack, ident.Name) {
 					return fmt.Errorf("line %d:%d: cannot assign to constant variable '%s'", node.Pos.Line, node.Pos.Column, ident.Name)
 				}
+				if binding, exists := lookup(scopeStack, ident.Name); exists {
+					expectedType, typed := scalarBindingType(binding)
+					actualType, known := inferLiteralType(node.Right, scopeStack)
+					if typed && known && !typeCompatible(expectedType, actualType) {
+						return fmt.Errorf("line %d:%d: type mismatch assigning '%s': expected %s, got %s", node.Pos.Line, node.Pos.Column, ident.Name, expectedType, actualType)
+					}
+				}
+			}
+			if _, isArrayLiteral := node.Right.(*ast.ArrayLiteralExpr); isArrayLiteral {
+				return fmt.Errorf("line %d:%d: array literals are only supported in top-level declarations", node.Pos.Line, node.Pos.Column)
 			}
 		}
 		if err := checkExpr(node.Right, scopeStack, functionArity); err != nil {
@@ -415,7 +447,7 @@ func lookup(scopeStack []map[string]string, name string) (string, bool) {
 func isConstBinding(scopeStack []map[string]string, name string) bool {
 	for i := len(scopeStack) - 1; i >= 0; i-- {
 		if val, ok := scopeStack[i][name]; ok {
-			return val == "const" || strings.HasPrefix(val, "array-const-")
+			return val == "const" || strings.Contains(val, "-const")
 		}
 	}
 	return false
@@ -438,6 +470,11 @@ func renderUnaryTarget(expr ast.Expr) string {
 }
 
 func classifyBinding(baseKind string, declaredType string, declaredCapacity int, value ast.Expr, scopeStack []map[string]string, functionReturns map[string]string) (string, error) {
+	declaredType = strings.TrimSpace(declaredType)
+	if declaredType != "" && !isSupportedType(declaredType) {
+		return "", fmt.Errorf("unsupported declared type '%s'", declaredType)
+	}
+
 	if declaredCapacity > 0 {
 		elemType := declaredType
 		if elemType == "" {
@@ -454,7 +491,7 @@ func classifyBinding(baseKind string, declaredType string, declaredCapacity int,
 			return encodeArrayBinding(baseKind, elemType, declaredCapacity), nil
 		}
 		for _, elem := range lit.Elements {
-			et, ok := inferLiteralType(elem, nil)
+			et, ok := inferLiteralType(elem, scopeStack)
 			if !ok || !typeCompatible(elemType, et) {
 				return "", fmt.Errorf("array element type mismatch for declared type '%s'", elemType)
 			}
@@ -466,12 +503,12 @@ func classifyBinding(baseKind string, declaredType string, declaredCapacity int,
 		if len(lit.Elements) == 0 {
 			return "", fmt.Errorf("empty array literal requires explicit type and capacity, e.g. let a: int32[8] = []")
 		}
-		elemType, ok := inferLiteralType(lit.Elements[0], nil)
+		elemType, ok := inferLiteralType(lit.Elements[0], scopeStack)
 		if !ok {
 			return "", fmt.Errorf("unsupported array element type")
 		}
 		for _, elem := range lit.Elements[1:] {
-			et, ok := inferLiteralType(elem, nil)
+			et, ok := inferLiteralType(elem, scopeStack)
 			if !ok || !typeCompatible(elemType, et) {
 				return "", fmt.Errorf("array literal elements must be homogeneous")
 			}
@@ -506,7 +543,22 @@ func classifyBinding(baseKind string, declaredType string, declaredCapacity int,
 			return "pin-" + baseKind, nil
 		}
 	}
-	return baseKind, nil
+	resolvedType := declaredType
+	if resolvedType == "" {
+		inferred, ok := inferLiteralType(value, scopeStack)
+		if ok && !strings.Contains(inferred, ":") {
+			resolvedType = inferred
+		}
+	}
+	if resolvedType == "" {
+		resolvedType = "int32"
+	}
+	if inferred, ok := inferLiteralType(value, scopeStack); ok && !strings.Contains(inferred, ":") {
+		if !typeCompatible(resolvedType, inferred) {
+			return "", fmt.Errorf("type mismatch for declaration: expected %s, got %s", resolvedType, inferred)
+		}
+	}
+	return encodeScalarBinding(baseKind, resolvedType), nil
 }
 
 func inferFunctionObjectReturns(program *ast.Program) map[string]string {
@@ -633,6 +685,10 @@ func inferLiteralType(expr ast.Expr, scopeStack []map[string]string) (string, bo
 	case *ast.BoolLiteral:
 		return "boolean", true
 	case *ast.Identifier:
+		switch node.Name {
+		case "HIGH", "LOW":
+			return "int32", true
+		}
 		if scopeStack == nil {
 			return "", false
 		}
@@ -646,12 +702,15 @@ func inferLiteralType(expr ast.Expr, scopeStack []map[string]string) (string, bo
 		if isObjectBinding(binding) {
 			return objectShape(binding), true
 		}
-		switch binding {
-		case "var", "const":
-			return "int32", true
-		default:
-			return "", false
+		if t, ok := scalarBindingType(binding); ok {
+			return t, true
 		}
+		return "", false
+	case *ast.CallExpr:
+		if ident, ok := node.Function.(*ast.Identifier); ok && ident.Name == "pin" {
+			return "int32", true
+		}
+		return "", false
 	case *ast.SelectorExpr:
 		if ident, ok := node.Object.(*ast.Identifier); ok && scopeStack != nil {
 			if binding, exists := lookup(scopeStack, ident.Name); exists && isObjectBinding(binding) {
@@ -671,7 +730,7 @@ func typeCompatible(expected string, actual string) bool {
 		return true
 	}
 	if isNumericType(expected) && isNumericType(actual) {
-		return true
+		return numericAssignable(expected, actual)
 	}
 	if strings.Contains(expected, ":") && strings.Contains(actual, ":") {
 		return expected == actual
@@ -695,4 +754,65 @@ func builtin(name string) bool {
 	default:
 		return false
 	}
+}
+
+func encodeScalarBinding(baseKind, t string) string {
+	return fmt.Sprintf("scalar-%s-%s", baseKind, t)
+}
+
+func scalarBindingType(binding string) (string, bool) {
+	parts := strings.SplitN(binding, "-", 3)
+	if len(parts) != 3 || parts[0] != "scalar" {
+		return "", false
+	}
+	return parts[2], true
+}
+
+func isSupportedType(t string) bool {
+	if isNumericType(t) {
+		return true
+	}
+	return t == "boolean" || t == "string"
+}
+
+func numericAssignable(expected, actual string) bool {
+	switch expected {
+	case "int8":
+		return actual == "int8"
+	case "uint8":
+		return actual == "uint8"
+	case "int16":
+		return actual == "int8" || actual == "uint8" || actual == "int16"
+	case "uint16":
+		return actual == "uint8" || actual == "uint16"
+	case "int32":
+		return actual == "int8" || actual == "uint8" || actual == "int16" || actual == "uint16" || actual == "int32"
+	case "uint32":
+		return actual == "uint8" || actual == "uint16" || actual == "uint32"
+	case "float32":
+		return actual == "int8" || actual == "uint8" || actual == "int16" || actual == "uint16" || actual == "int32" || actual == "uint32" || actual == "float32"
+	case "number":
+		return isNumericType(actual)
+	default:
+		return false
+	}
+}
+
+func isEqualityOp(op string) bool {
+	switch op {
+	case "==", "===", "!=", "!==":
+		return true
+	default:
+		return false
+	}
+}
+
+func equalityComparable(left, right string) bool {
+	if left == right {
+		return true
+	}
+	if isNumericType(left) && isNumericType(right) {
+		return true
+	}
+	return false
 }

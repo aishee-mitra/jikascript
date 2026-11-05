@@ -340,6 +340,15 @@ Bitwise operators should also be supported where appropriate for embedded regist
 
 Do not collapse `==` and `===` into identical behavior without explicitly defining and documenting the semantics.
 
+JikaScript v0.1 equality semantics:
+
+- `==` and `===` are both strict, non-coercing equality for supported types.
+- `!=` and `!==` are both strict inequality.
+- Valid comparisons:
+  - numeric-to-numeric
+  - same-type non-numeric (`boolean` with `boolean`, `string` with `string`)
+- Mixed-type comparisons such as `number` vs `string` must be rejected at compile time.
+
 ### Arrays
 
 Support **bounded, dynamically sized, homogeneous arrays** backed by static storage.
@@ -363,6 +372,8 @@ Requirements:
 - Homogeneous element type.
 - Indexed reads/writes.
 - Bounds and capacity checks.
+- Array-literal reassignment is not supported in v0.1.
+- Array declarations are restricted to top-level scope in v0.1.
 
 ### Array declaration syntax (v0.1)
 

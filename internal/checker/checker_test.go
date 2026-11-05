@@ -193,3 +193,71 @@ func TestCheckAllowsInferredArrayOfObjects(t *testing.T) {
 		t.Fatalf("unexpected checker error: %v", err)
 	}
 }
+
+func TestCheckRejectsNarrowingNumericDeclaration(t *testing.T) {
+	program, err := parser.ParseProgram(`let small: uint8 = 255;`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "type mismatch") {
+		t.Fatalf("expected declaration type mismatch error, got %v", err)
+	}
+}
+
+func TestCheckAllowsNumericWideningDeclaration(t *testing.T) {
+	program, err := parser.ParseProgram(`let count: int32 = 42;
+let reading: float32 = count;`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err != nil {
+		t.Fatalf("unexpected checker error: %v", err)
+	}
+}
+
+func TestCheckRejectsIncompatibleScalarAssignment(t *testing.T) {
+	program, err := parser.ParseProgram(`let enabled: boolean = true;
+enabled = 1;`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "type mismatch assigning 'enabled'") {
+		t.Fatalf("expected assignment type mismatch error, got %v", err)
+	}
+}
+
+func TestCheckRejectsIncompatibleEqualityComparison(t *testing.T) {
+	program, err := parser.ParseProgram(`let count = 1;
+let label = "x";
+if (count == label) { count = 2; }`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "cannot compare") {
+		t.Fatalf("expected incompatible equality error, got %v", err)
+	}
+}
+
+func TestCheckRejectsLocalArrayDeclaration(t *testing.T) {
+	program, err := parser.ParseProgram(`function init() {
+  let values: int32[4] = [1, 2];
+  return 0;
+}`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "array declarations are only supported at top-level scope") {
+		t.Fatalf("expected local array declaration error, got %v", err)
+	}
+}
+
+func TestCheckRejectsArrayLiteralReassignment(t *testing.T) {
+	program, err := parser.ParseProgram(`let values: int32[4] = [1, 2];
+values = [3, 4];`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "array literals are only supported in top-level declarations") {
+		t.Fatalf("expected array reassignment rejection, got %v", err)
+	}
+}
