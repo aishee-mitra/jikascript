@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"microjs/internal/ast"
-	"microjs/internal/lexer"
+	"jikascript/internal/ast"
+	"jikascript/internal/lexer"
 )
 
 // Parser converts tokens into an AST.

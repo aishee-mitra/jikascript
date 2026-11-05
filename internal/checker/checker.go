@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"microjs/internal/ast"
-	"microjs/targets/ch32fun"
+	"jikascript/internal/ast"
+	"jikascript/targets/ch32fun"
 )
 
-// Check validates the initial MicroJS subset with minimal semantic checks.
+// Check validates the initial JikaScript subset with minimal semantic checks.
 func Check(program *ast.Program) error {
 	scopeStack := []map[string]string{{}}
 	taskNames := map[string]struct{}{}

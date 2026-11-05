@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"microjs/internal/checker"
-	cgen "microjs/internal/codegen/c"
-	"microjs/internal/parser"
-	"microjs/targets/ch32fun"
+	"jikascript/internal/checker"
+	cgen "jikascript/internal/codegen/c"
+	"jikascript/internal/parser"
+	"jikascript/targets/ch32fun"
 )
 
 func main() {
@@ -46,9 +46,9 @@ func main() {
 
 func printUsage() {
 	fmt.Println("usage:")
-	fmt.Println("  microjs check <input.mic>")
-	fmt.Println("  microjs transpile <input.mic> [-o output.c] [--target ch32v003]")
-	fmt.Println("  microjs build <input.mic> [--target ch32v003] [--optimize size|speed]")
+	fmt.Println("  jikascript check <input.jika>")
+	fmt.Println("  jikascript transpile <input.jika> [-o output.c] [--target ch32v003]")
+	fmt.Println("  jikascript build <input.jika> [--target ch32v003] [--optimize size|speed]")
 }
 
 func runCheck(args []string) error {
@@ -56,8 +56,8 @@ func runCheck(args []string) error {
 		return fmt.Errorf("missing input file")
 	}
 	path := args[0]
-	if filepath.Ext(path) != ".mic" {
-		return fmt.Errorf("input must be a .mic source file: %s", path)
+	if filepath.Ext(path) != ".jika" {
+		return fmt.Errorf("input must be a .jika source file: %s", path)
 	}
 	code, err := os.ReadFile(path)
 	if err != nil {
@@ -82,8 +82,8 @@ func runTranspile(args []string) error {
 	if opts.input == "" {
 		return fmt.Errorf("missing input file")
 	}
-	if filepath.Ext(opts.input) != ".mic" {
-		return fmt.Errorf("input must be a .mic source file: %s", opts.input)
+	if filepath.Ext(opts.input) != ".jika" {
+		return fmt.Errorf("input must be a .jika source file: %s", opts.input)
 	}
 	code, err := os.ReadFile(opts.input)
 	if err != nil {
@@ -201,14 +201,14 @@ func parseOptions(args []string) (cliOptions, error) {
 }
 
 func buildCH32fun(sourceC, outputDir, base, optimize string) error {
-	ch32funRoot := strings.TrimSpace(os.Getenv("MICROJS_CH32FUN"))
+	ch32funRoot := strings.TrimSpace(os.Getenv("JIKASCRIPT_CH32FUN"))
 	if ch32funRoot == "" {
-		return fmt.Errorf("MICROJS_CH32FUN must point to a CH32fun checkout")
+		return fmt.Errorf("JIKASCRIPT_CH32FUN must point to a CH32fun checkout")
 	}
 
 	target := ch32fun.NewTarget()
-	cc := toolOrDefault("MICROJS_RISCV_GCC", target.ToolchainTriple+"-gcc")
-	objcopy := toolOrDefault("MICROJS_OBJCOPY", target.ToolchainTriple+"-objcopy")
+	cc := toolOrDefault("JIKASCRIPT_RISCV_GCC", target.ToolchainTriple+"-gcc")
+	objcopy := toolOrDefault("JIKASCRIPT_OBJCOPY", target.ToolchainTriple+"-objcopy")
 
 	optFlag := "-Os"
 	if optimize == "speed" {

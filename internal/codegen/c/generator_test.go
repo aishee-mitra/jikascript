@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"microjs/internal/parser"
+	"jikascript/internal/parser"
 )
 
 func TestGenerateContainsMainAndTask(t *testing.T) {
@@ -22,7 +22,7 @@ func TestGenerateContainsMainAndTask(t *testing.T) {
 	if !strings.Contains(out, "blink") {
 		t.Fatal("expected task name in generated C")
 	}
-	if !strings.Contains(out, "static periodic_task_t microjs_task_blink_task;") {
+	if !strings.Contains(out, "static periodic_task_t jikascript_task_blink_task;") {
 		t.Fatal("expected static task registration variable")
 	}
 }

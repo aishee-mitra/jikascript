@@ -15,7 +15,7 @@ func IsValidPin(name string) bool {
 	return ok
 }
 
-// IsValidPinMethod reports whether a method is valid on a MicroJS pin object.
+// IsValidPinMethod reports whether a method is valid on a JikaScript pin object.
 func IsValidPinMethod(method string) bool {
 	switch method {
 	case "output", "input", "write", "read", "toggle":

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"microjs/internal/parser"
+	"jikascript/internal/parser"
 )
 
 func TestCheckAllowsLoopingCode(t *testing.T) {

@@ -1,5 +1,5 @@
-#ifndef MICROJS_CH32FUN_GPIO_H
-#define MICROJS_CH32FUN_GPIO_H
+#ifndef JIKASCRIPT_CH32FUN_GPIO_H
+#define JIKASCRIPT_CH32FUN_GPIO_H
 
 int pin(const char *name);
 void gpio_output(int pin_id);

@@ -1,4 +1,4 @@
-# MicroJS
+# JikaScript
 ## Language, Compiler & Runtime Specification
 
 **Specification version:** 0.1.0  
@@ -9,29 +9,29 @@
 **Hardware framework:** CH32fun  
 **Compiler output:** Pure C (C99)  
 **Scheduler:** Standalone cooperative scheduling library written in C  
-**Source extension:** `.mic`
+**Source extension:** `.jika`
 
 ---
 
 # 1. Project Overview
 
-MicroJS is a lightweight, JavaScript-inspired programming language designed for microcontrollers and resource-constrained embedded systems.
+JikaScript is a lightweight, JavaScript-inspired programming language designed for microcontrollers and resource-constrained embedded systems.
 
 The language should follow ECMAScript conventions and semantics as closely as practical, while implementing only a carefully selected subset suitable for embedded development.
 
-MicroJS programs are compiled ahead of time into native C code. The resulting C code is compiled using the target's native C toolchain to produce firmware.
+JikaScript programs are compiled ahead of time into native C code. The resulting C code is compiled using the target's native C toolchain to produce firmware.
 
-MicroJS does not require an interpreter, virtual machine, garbage collector, or language runtime engine on the microcontroller.
+JikaScript does not require an interpreter, virtual machine, garbage collector, or language runtime engine on the microcontroller.
 
 The initial implementation targets WCH CH32V003 using CH32fun.
 
 The project consists of three independently useful components:
 
-1. **MicroJS compiler:** A Go-based source-to-C compiler.
-2. **MicroJS language:** An ECMAScript-inspired embedded programming language.
+1. **JikaScript compiler:** A Go-based source-to-C compiler.
+2. **JikaScript language:** An ECMAScript-inspired embedded programming language.
 3. **Periodic scheduler:** A standalone, reusable cooperative scheduling library written in pure C.
 
-The scheduler must be usable independently of MicroJS in ordinary C embedded applications.
+The scheduler must be usable independently of JikaScript in ordinary C embedded applications.
 
 ---
 
@@ -56,13 +56,13 @@ The following principles are mandatory architectural requirements.
 
 The project contains three logical layers.
 
-## 3.1 MicroJS compiler
+## 3.1 JikaScript compiler
 
 Written in Go.
 
 Responsibilities:
 
-- Read `.mic` files.
+- Read `.jika` files.
 - Perform lexical analysis.
 - Parse source code.
 - Construct an abstract syntax tree.
@@ -71,7 +71,7 @@ Responsibilities:
 - Support target-specific code generation.
 - Provide command-line build and inspection operations.
 
-## 3.2 MicroJS runtime
+## 3.2 JikaScript runtime
 
 Written in pure C.
 
@@ -83,7 +83,7 @@ Responsibilities:
 - Timer integration.
 - Minimal runtime support where required.
 
-The runtime must be independent of MicroJS.
+The runtime must be independent of JikaScript.
 
 ## 3.3 Hardware backend
 
@@ -97,12 +97,12 @@ Initial backend:
 - Hardware timer integration.
 - Later: ADC, PWM, UART, SPI and I2C.
 
-Hardware-specific functions should be exposed through a consistent MicroJS hardware API.
+Hardware-specific functions should be exposed through a consistent JikaScript hardware API.
 
 ## 3.4 Compilation pipeline
 
 ```text
-             MicroJS source (.mic)
+             JikaScript source (.jika)
                       |
                       v
                  Go compiler
@@ -146,13 +146,13 @@ An AST-based direct C generator is sufficient.
 
 ---
 
-# 4. MicroJS Language Design
+# 4. JikaScript Language Design
 
 ## 4.1 ECMAScript compatibility strategy
 
 ECMAScript 2024 will be used as the reference specification.
 
-MicroJS is not intended to be a complete JavaScript implementation.
+JikaScript is not intended to be a complete JavaScript implementation.
 
 Instead, it implements a well-defined subset of ECMAScript.
 
@@ -224,7 +224,7 @@ Full JavaScript `Number`, `BigInt`, and arbitrary-precision semantics are not re
 
 ### Type annotations
 
-MicroJS may support optional embedded-specific type annotations:
+JikaScript may support optional embedded-specific type annotations:
 
 ```javascript
 let count: uint32 = 100;
@@ -244,7 +244,7 @@ Supported hardware-oriented types should include:
 - `boolean`
 - `string`
 
-These annotations are a MicroJS extension, not ECMAScript syntax.
+These annotations are a JikaScript extension, not ECMAScript syntax.
 
 Type inference should be supported where the type is unambiguous.
 
@@ -369,7 +369,7 @@ Strings should initially be immutable, statically allocated values.
 Example:
 
 ```javascript
-const message = "Hello MicroJS";
+const message = "Hello JikaScript";
 ```
 
 Strings should be stored in read-only memory where supported by the target toolchain.
@@ -380,11 +380,11 @@ Dynamic string allocation and garbage collection are excluded.
 
 # 5. Cooperative Scheduling Model
 
-Cooperative periodic task scheduling is the primary programming model of MicroJS.
+Cooperative periodic task scheduling is the primary programming model of JikaScript.
 
 There will be one task model in v0.1.
 
-MicroJS will reuse the standalone C scheduler described in Section 6.
+JikaScript will reuse the standalone C scheduler described in Section 6.
 
 ## 5.1 Task syntax
 
@@ -477,7 +477,7 @@ The scheduler must:
 
 - Be written in pure C.
 - Target C99 compatibility.
-- Work independently of MicroJS.
+- Work independently of JikaScript.
 - Support periodic callback execution.
 - Use function pointers for callbacks.
 - Use static allocation.
@@ -590,7 +590,7 @@ periodic/
 └── README.md
 ```
 
-The core scheduler must not include MicroJS-specific code.
+The core scheduler must not include JikaScript-specific code.
 
 ---
 
@@ -676,10 +676,10 @@ Implement the following stages:
 ## 8.3 Initial project structure
 
 ```text
-microjs/
+jikascript/
 ├── go.mod
 ├── cmd/
-│   └── microjs/
+│   └── jikascript/
 │       └── main.go
 │
 ├── internal/
@@ -712,8 +712,8 @@ microjs/
 │       └── periodic.c
 │
 ├── examples/
-│   ├── blink.mic
-│   └── multiple_tasks.mic
+│   ├── blink.jika
+│   └── multiple_tasks.jika
 │
 ├── tests/
 │
@@ -789,13 +789,13 @@ Requirements:
 - Use ordinary functions and function pointers.
 - Use static allocation wherever practical.
 - Generate deterministic output.
-- Generate valid C identifiers from MicroJS names.
+- Generate valid C identifiers from JikaScript names.
 - Avoid identifier collisions.
 - Include required runtime and hardware headers.
 
 Arrow callbacks must be converted into ordinary C functions.
 
-Example MicroJS:
+Example JikaScript:
 
 ```javascript
 task("blink", 1000, () => {
@@ -806,7 +806,7 @@ task("blink", 1000, () => {
 Conceptual generated C:
 
 ```c
-static void microjs_task_blink(void) {
+static void jikascript_task_blink(void) {
     gpio_toggle(PC1);
 }
 
@@ -814,8 +814,8 @@ int main(void) {
     periodic_init();
 
     periodic_task_add(
-        &microjs_blink_task,
-        microjs_task_blink,
+        &jikascript_blink_task,
+        jikascript_task_blink,
         1000
     );
 
@@ -834,13 +834,13 @@ The generated code must be adapted to the final scheduler API.
 The compiler executable is:
 
 ```text
-microjs
+jikascript
 ```
 
 Source extension:
 
 ```text
-.mic
+.jika
 ```
 
 ## 9.1 build
@@ -848,7 +848,7 @@ Source extension:
 Command:
 
 ```bash
-microjs build blink.mic
+jikascript build blink.jika
 ```
 
 Purpose:
@@ -890,7 +890,7 @@ Important: the compiler must not sacrifice correctness to minimize generated cod
 Command:
 
 ```bash
-microjs transpile blink.mic
+jikascript transpile blink.jika
 ```
 
 Purpose:
@@ -909,7 +909,7 @@ Requirements:
 Example:
 
 ```bash
-microjs transpile blink.mic -o blink.c
+jikascript transpile blink.jika -o blink.c
 ```
 
 ## 9.3 check
@@ -917,7 +917,7 @@ microjs transpile blink.mic -o blink.c
 Command:
 
 ```bash
-microjs check blink.mic
+jikascript check blink.jika
 ```
 
 Purpose:
@@ -929,10 +929,10 @@ Validate syntax and semantics without generating firmware.
 Potential options:
 
 ```bash
-microjs build blink.mic --target ch32v003
-microjs build blink.mic --optimize size
-microjs build blink.mic --optimize speed
-microjs transpile blink.mic --target ch32v003
+jikascript build blink.jika --target ch32v003
+jikascript build blink.jika --optimize size
+jikascript build blink.jika --optimize speed
+jikascript transpile blink.jika --target ch32v003
 ```
 
 The initial release only needs essential functionality. Do not implement every possible option prematurely.
@@ -1011,13 +1011,13 @@ The compiler should produce understandable diagnostics.
 Example:
 
 ```text
-blink.mic:8:12: error:
+blink.jika:8:12: error:
 Unknown hardware pin "PX99"
 
-blink.mic:12:5: error:
+blink.jika:12:5: error:
 Cannot assign to constant variable "led"
 
-blink.mic:18:1: error:
+blink.jika:18:1: error:
 Invalid task interval
 ```
 
@@ -1050,7 +1050,7 @@ Test each stage independently:
 
 For each example:
 
-1. Compile the `.mic` file.
+1. Compile the `.jika` file.
 2. Generate C.
 3. Verify generated C syntax.
 4. Compile the C with a host compiler where practical.
@@ -1059,7 +1059,7 @@ For each example:
 
 ## 13.3 Scheduler tests
 
-Test independently of MicroJS:
+Test independently of JikaScript:
 
 - Single periodic task.
 - Multiple periodic tasks.
@@ -1203,7 +1203,7 @@ Deliverable: Compiler that can parse the initial language subset.
 - Control flow.
 - Semantic checker.
 
-Deliverable: Validated MicroJS programs.
+Deliverable: Validated JikaScript programs.
 
 ## Milestone 4: C transpiler
 
@@ -1225,7 +1225,7 @@ Deliverable: Readable, compilable C output.
 - Produce firmware artifacts.
 - Test actual hardware.
 
-Deliverable: Working MicroJS blink firmware.
+Deliverable: Working JikaScript blink firmware.
 
 ## Milestone 6: First usable release
 
@@ -1235,24 +1235,24 @@ Deliverable: Working MicroJS blink firmware.
 - Add examples.
 - Add installation and usage documentation.
 
-Deliverable: MicroJS v0.1.
+Deliverable: JikaScript v0.1.
 
 ---
 
 # 17. Definition of Done
 
-MicroJS v0.1 is complete when:
+JikaScript v0.1 is complete when:
 
 1. The scheduler exists as an independently usable pure C library.
-2. The Go compiler can read `.mic` files.
+2. The Go compiler can read `.jika` files.
 3. The compiler supports the documented ECMAScript subset.
 4. The compiler performs semantic checking.
 5. The compiler generates valid C99 code.
 6. Arrow callbacks compile into ordinary C functions.
 7. Periodic tasks integrate with the standalone scheduler.
 8. GPIO operations work on CH32V003 through CH32fun.
-9. `microjs transpile` produces readable C.
-10. `microjs build` produces optimized firmware.
+9. `jikascript transpile` produces readable C.
+10. `jikascript build` produces optimized firmware.
 11. The generated firmware runs on a physical CH32V003 board.
 12. The generated code has no C++ dependency.
 
@@ -1286,9 +1286,9 @@ Do not attempt to build the entire language in one step.
 The first end-to-end demonstration must be:
 
 ```text
-blink.mic
+blink.jika
     ↓
-microjs build
+jikascript build
     ↓
 generated C
     ↓
@@ -1304,9 +1304,9 @@ Blinking LED
 # Recommended Repo structure
 
 ```
-MicroJS/
+JikaScript/
 ├── AGENTS.md       # How the coding agent works
-├── SPEC.md         # What MicroJS must become
+├── SPEC.md         # What JikaScript must become
 ├── README.md       # Project overview and getting started
 ├── go.mod
 ├── cmd/

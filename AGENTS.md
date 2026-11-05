@@ -1,13 +1,13 @@
-# AGENTS.md — MicroJS Development Instructions
+# AGENTS.md — JikaScript Development Instructions
 
 ## 1. Primary Instruction
 
 Before making any changes, read:
 
-- `SPEC.md` — authoritative MicroJS language, compiler, runtime, scheduler, and target specification.
+- `SPEC.md` — authoritative JikaScript language, compiler, runtime, scheduler, and target specification.
 - `README.md` — project overview and current setup instructions, if present.
 
-**SPEC.md is the source of truth for what MicroJS must implement.**
+**SPEC.md is the source of truth for what JikaScript must implement.**
 
 This file complements SPEC.md by defining how implementation work should be performed.
 
@@ -19,7 +19,7 @@ If SPEC.md is ambiguous, choose the simplest implementation consistent with its 
 
 ## 2. Project Philosophy
 
-Keep MicroJS:
+Keep JikaScript:
 
 - Simple.
 - Lightweight.
@@ -37,15 +37,15 @@ Do not introduce dependencies, frameworks, compiler infrastructure, or runtime c
 
 Respect the separation between:
 
-1. Golang-based MicroJS compiler.
-2. MicroJS language and its ECMAScript-compatible semantics.
+1. Golang-based JikaScript compiler.
+2. JikaScript language and its ECMAScript-compatible semantics.
 3. Standalone C scheduler/runtime.
 4. Target-specific hardware backends.
 5. Native C toolchain and firmware build process.
 
 Keep the compiler independent of individual MCU targets.
 
-Keep the scheduler independently usable without MicroJS.
+Keep the scheduler independently usable without JikaScript.
 
 Keep hardware-specific functionality out of the language core.
 
@@ -218,9 +218,9 @@ Do not start by generating the entire project or implementing every feature.
 ## 13. Suggested Repo structure
 
 ```
-  MicroJS/
+  JikaScript/
   ├── AGENTS.md       # How the coding agent works
-  ├── SPEC.md         # What MicroJS must become
+  ├── SPEC.md         # What JikaScript must become
   ├── README.md       # Project overview and getting started
   ├── go.mod
   ├── cmd/
