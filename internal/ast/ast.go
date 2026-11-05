@@ -255,3 +255,20 @@ type ArrayLiteralExpr struct {
 }
 
 func (*ArrayLiteralExpr) exprNode() {}
+
+// ObjectProperty is a named, statically known member of an object literal.
+// Computed keys, spreads, and methods are deliberately outside JikaScript's
+// record-only object model.
+type ObjectProperty struct {
+	Name  string
+	Value Expr
+	Pos   Position
+}
+
+// ObjectLiteralExpr represents a statically shaped record literal.
+type ObjectLiteralExpr struct {
+	Properties []ObjectProperty
+	Pos        Position
+}
+
+func (*ObjectLiteralExpr) exprNode() {}

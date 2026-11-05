@@ -13,22 +13,23 @@ import (
 func Check(program *ast.Program) error {
 	scopeStack := []map[string]string{{}}
 	taskNames := map[string]struct{}{}
+	functionReturns := inferFunctionObjectReturns(program)
 	for _, stmt := range program.Statements {
-		if err := checkStmt(stmt, scopeStack, taskNames, 0, 0); err != nil {
+		if err := checkStmt(stmt, scopeStack, taskNames, 0, 0, functionReturns); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[string]struct{}, loopDepth int, switchDepth int) error {
+func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[string]struct{}, loopDepth int, switchDepth int, functionReturns map[string]string) error {
 	current := scopeStack[len(scopeStack)-1]
 	switch node := stmt.(type) {
 	case *ast.VarDecl:
 		if _, ok := current[node.Name]; ok {
 			return fmt.Errorf("line %d:%d: variable '%s' already declared in this scope", node.Pos.Line, node.Pos.Column, node.Name)
 		}
-		bindingKind, err := classifyBinding("var", node.Type, node.ArrayCapacity, node.Value)
+		bindingKind, err := classifyBinding("var", node.Type, node.ArrayCapacity, node.Value, scopeStack, functionReturns)
 		if err != nil {
 			return fmt.Errorf("line %d:%d: %w", node.Pos.Line, node.Pos.Column, err)
 		}
@@ -42,7 +43,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		if _, ok := current[node.Name]; ok {
 			return fmt.Errorf("line %d:%d: constant '%s' already declared in this scope", node.Pos.Line, node.Pos.Column, node.Name)
 		}
-		bindingKind, err := classifyBinding("const", node.Type, node.ArrayCapacity, node.Value)
+		bindingKind, err := classifyBinding("const", node.Type, node.ArrayCapacity, node.Value, scopeStack, functionReturns)
 		if err != nil {
 			return fmt.Errorf("line %d:%d: %w", node.Pos.Line, node.Pos.Column, err)
 		}
@@ -65,7 +66,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 			funcScope[param] = "param"
 		}
 		for _, s := range node.Body {
-			if err := checkStmt(s, append(scopeStack, funcScope), taskNames, loopDepth, switchDepth); err != nil {
+			if err := checkStmt(s, append(scopeStack, funcScope), taskNames, loopDepth, switchDepth, functionReturns); err != nil {
 				return err
 			}
 		}
@@ -74,12 +75,12 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 			return err
 		}
 		for _, s := range node.Then {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
 				return err
 			}
 		}
 		for _, s := range node.Else {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
 				return err
 			}
 		}
@@ -88,13 +89,13 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 			return err
 		}
 		for _, s := range node.Body {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth+1, switchDepth); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
 				return err
 			}
 		}
 	case *ast.DoWhileStmt:
 		for _, s := range node.Body {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth+1, switchDepth); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
 				return err
 			}
 		}
@@ -103,7 +104,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		}
 	case *ast.ForStmt:
 		if node.Init != nil {
-			if err := checkStmt(node.Init, scopeStack, taskNames, loopDepth+1, switchDepth); err != nil {
+			if err := checkStmt(node.Init, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
 				return err
 			}
 		}
@@ -113,7 +114,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 			}
 		}
 		for _, s := range node.Body {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth+1, switchDepth); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
 				return err
 			}
 		}
@@ -136,7 +137,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 				callbackScope[param] = "callback-param"
 			}
 			for _, s := range node.Callback.Body {
-				if err := checkStmt(s, append(scopeStack, callbackScope), taskNames, loopDepth, switchDepth); err != nil {
+				if err := checkStmt(s, append(scopeStack, callbackScope), taskNames, loopDepth, switchDepth, functionReturns); err != nil {
 					return err
 				}
 			}
@@ -152,7 +153,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 				}
 			}
 			for _, s := range c.Body {
-				if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth+1); err != nil {
+				if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth+1, functionReturns); err != nil {
 					return err
 				}
 			}
@@ -167,7 +168,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		}
 	case *ast.BlockStmt:
 		for _, s := range node.Statements {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth); err != nil {
+			if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
 				return err
 			}
 		}
@@ -237,6 +238,11 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 	case *ast.SelectorExpr:
 		if ident, ok := node.Object.(*ast.Identifier); ok {
 			if kind, exists := lookup(scopeStack, ident.Name); exists {
+				if isObjectBinding(kind) {
+					if _, ok := objectPropertyType(kind, node.Field); !ok {
+						return fmt.Errorf("line %d:%d: unknown property '%s' on object '%s'", node.Pos.Line, node.Pos.Column, node.Field, ident.Name)
+					}
+				}
 				if isPinBinding(kind) {
 					if !ch32fun.IsValidPinMethod(node.Field) {
 						return fmt.Errorf("line %d:%d: unsupported pin method '%s'", node.Pos.Line, node.Pos.Column, node.Field)
@@ -273,6 +279,24 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 			return err
 		}
 		if isAssignmentOp(node.Op) {
+			if sel, ok := node.Left.(*ast.SelectorExpr); ok {
+				ident, ok := sel.Object.(*ast.Identifier)
+				if !ok {
+					return fmt.Errorf("line %d:%d: property assignment requires an object identifier", node.Pos.Line, node.Pos.Column)
+				}
+				binding, exists := lookup(scopeStack, ident.Name)
+				if !exists || !isObjectBinding(binding) {
+					return fmt.Errorf("line %d:%d: '%s' is not an object", node.Pos.Line, node.Pos.Column, ident.Name)
+				}
+				propertyType, exists := objectPropertyType(binding, sel.Field)
+				if !exists {
+					return fmt.Errorf("line %d:%d: unknown property '%s' on object '%s'", node.Pos.Line, node.Pos.Column, sel.Field, ident.Name)
+				}
+				valueType, known := inferLiteralType(node.Right, scopeStack)
+				if known && !typeCompatible(propertyType, valueType) {
+					return fmt.Errorf("line %d:%d: type mismatch assigning property '%s' of object '%s': expected %s, got %s", node.Pos.Line, node.Pos.Column, sel.Field, ident.Name, propertyType, valueType)
+				}
+			}
 			if idxExpr, ok := node.Left.(*ast.IndexExpr); ok {
 				ident, ok := idxExpr.Object.(*ast.Identifier)
 				if !ok {
@@ -326,13 +350,28 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 			}
 		}
 		return nil
+	case *ast.ObjectLiteralExpr:
+		seen := map[string]struct{}{}
+		for _, property := range node.Properties {
+			if _, exists := seen[property.Name]; exists {
+				return fmt.Errorf("line %d:%d: duplicate object property '%s'", property.Pos.Line, property.Pos.Column, property.Name)
+			}
+			seen[property.Name] = struct{}{}
+			if err := checkExpr(property.Value, scopeStack); err != nil {
+				return err
+			}
+			if _, ok := inferLiteralType(property.Value, scopeStack); !ok {
+				return fmt.Errorf("line %d:%d: unsupported value for object property '%s'", property.Pos.Line, property.Pos.Column, property.Name)
+			}
+		}
+		return nil
 	case *ast.ArrowFunctionExpr:
 		callbackScope := map[string]string{}
 		for _, param := range node.Params {
 			callbackScope[param] = "arrow-param"
 		}
 		for _, s := range node.Body {
-			if err := checkStmt(s, append(scopeStack, callbackScope), map[string]struct{}{}, 0, 0); err != nil {
+			if err := checkStmt(s, append(scopeStack, callbackScope), map[string]struct{}{}, 0, 0, map[string]string{}); err != nil {
 				return err
 			}
 		}
@@ -377,7 +416,7 @@ func renderUnaryTarget(expr ast.Expr) string {
 	return ""
 }
 
-func classifyBinding(baseKind string, declaredType string, declaredCapacity int, value ast.Expr) (string, error) {
+func classifyBinding(baseKind string, declaredType string, declaredCapacity int, value ast.Expr, scopeStack []map[string]string, functionReturns map[string]string) (string, error) {
 	if declaredCapacity > 0 {
 		elemType := declaredType
 		if elemType == "" {
@@ -419,7 +458,19 @@ func classifyBinding(baseKind string, declaredType string, declaredCapacity int,
 		return encodeArrayBinding(baseKind, elemType, len(lit.Elements)), nil
 	}
 
+	if lit, ok := value.(*ast.ObjectLiteralExpr); ok {
+		if declaredType != "" {
+			return "", fmt.Errorf("object declarations use inferred structural types and do not support type annotations")
+		}
+		return encodeObjectBinding(baseKind, objectTypeFromLiteral(lit, scopeStack)), nil
+	}
+
 	if call, ok := value.(*ast.CallExpr); ok {
+		if fn, ok := call.Function.(*ast.Identifier); ok {
+			if shape, ok := functionReturns[fn.Name]; ok {
+				return encodeObjectBinding(baseKind, shape), nil
+			}
+		}
 		if fn, ok := call.Function.(*ast.Identifier); ok && fn.Name == "pin" {
 			if len(call.Args) != 1 {
 				return "", fmt.Errorf("pin() expects exactly one argument")
@@ -437,6 +488,24 @@ func classifyBinding(baseKind string, declaredType string, declaredCapacity int,
 	return baseKind, nil
 }
 
+func inferFunctionObjectReturns(program *ast.Program) map[string]string {
+	returns := map[string]string{}
+	for _, stmt := range program.Statements {
+		fn, ok := stmt.(*ast.FunctionDecl)
+		if !ok {
+			continue
+		}
+		for _, bodyStmt := range fn.Body {
+			if ret, ok := bodyStmt.(*ast.ReturnStmt); ok {
+				if literal, ok := ret.Value.(*ast.ObjectLiteralExpr); ok {
+					returns[fn.Name] = objectTypeFromLiteral(literal, nil)
+				}
+			}
+		}
+	}
+	return returns
+}
+
 func isPinBinding(kind string) bool {
 	return strings.HasPrefix(kind, "pin-")
 }
@@ -447,6 +516,42 @@ func encodeArrayBinding(baseKind, elemType string, capacity int) string {
 
 func isArrayBinding(kind string) bool {
 	return strings.HasPrefix(kind, "array-")
+}
+
+func encodeObjectBinding(baseKind, shape string) string {
+	return "object-" + baseKind + "-" + shape
+}
+
+func isObjectBinding(kind string) bool { return strings.HasPrefix(kind, "object-") }
+
+func objectShape(kind string) string {
+	parts := strings.SplitN(kind, "-", 3)
+	if len(parts) != 3 {
+		return ""
+	}
+	return parts[2]
+}
+
+func objectPropertyType(kind, name string) (string, bool) {
+	for _, property := range strings.Split(objectShape(kind), ",") {
+		parts := strings.SplitN(property, ":", 2)
+		if len(parts) == 2 && parts[0] == name {
+			return parts[1], true
+		}
+	}
+	return "", false
+}
+
+func objectTypeFromLiteral(lit *ast.ObjectLiteralExpr, scopeStack []map[string]string) string {
+	properties := make([]string, 0, len(lit.Properties))
+	for _, property := range lit.Properties {
+		t, ok := inferLiteralType(property.Value, scopeStack)
+		if !ok {
+			t = "invalid"
+		}
+		properties = append(properties, property.Name+":"+t)
+	}
+	return strings.Join(properties, ",")
 }
 
 func arrayElemType(kind string) string {
@@ -506,12 +611,24 @@ func inferLiteralType(expr ast.Expr, scopeStack []map[string]string) (string, bo
 		if isArrayBinding(binding) {
 			return arrayElemType(binding), true
 		}
+		if isObjectBinding(binding) {
+			return objectShape(binding), true
+		}
 		switch binding {
 		case "var", "const":
 			return "int32", true
 		default:
 			return "", false
 		}
+	case *ast.SelectorExpr:
+		if ident, ok := node.Object.(*ast.Identifier); ok && scopeStack != nil {
+			if binding, exists := lookup(scopeStack, ident.Name); exists && isObjectBinding(binding) {
+				return objectPropertyType(binding, node.Field)
+			}
+		}
+		return "", false
+	case *ast.ObjectLiteralExpr:
+		return objectTypeFromLiteral(node, scopeStack), true
 	default:
 		return "", false
 	}
@@ -523,6 +640,9 @@ func typeCompatible(expected string, actual string) bool {
 	}
 	if isNumericType(expected) && isNumericType(actual) {
 		return true
+	}
+	if strings.Contains(expected, ":") && strings.Contains(actual, ":") {
+		return expected == actual
 	}
 	return false
 }

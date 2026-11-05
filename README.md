@@ -103,6 +103,21 @@ readings[0] = latest;
 
 `push()` is capacity-checked and `pop()`/index operations are bounds-checked in generated C.
 
+## Static objects (v0.1)
+
+Object literals are statically shaped records, not dynamic JavaScript objects.
+Property names and inferred property types are checked at compile time; property access
+compiles to direct C struct access with no heap allocation or runtime lookup.
+
+```javascript
+const device = { name: "sensor-1", pin: 3, enabled: true };
+device.pin = 4;       // allowed: `const` freezes the binding, not its contents
+```
+
+Unknown properties, duplicate property names, and incompatible property assignments are
+compile-time errors. Functions may accept and return inferred object records when their
+object arguments and returned object literals are statically resolvable.
+
 ## Validation commands
 
 ```bash

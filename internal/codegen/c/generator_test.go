@@ -110,3 +110,50 @@ readings[0] = latest;
 		t.Fatal("expected top-level array operations to preserve source order")
 	}
 }
+
+func TestGenerateObjectRecordsAndPropertyAccess(t *testing.T) {
+	program, err := parser.ParseProgram(`const device = { name: "sensor-1", pin: 3, enabled: true };
+device.pin = 4;
+device.enabled = false;
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	out := Generate(program)
+	if !strings.Contains(out, "typedef struct {") || !strings.Contains(out, "const char * name;") || !strings.Contains(out, "int32_t pin;") || !strings.Contains(out, "bool enabled;") {
+		t.Fatalf("expected C record definition, got:\n%s", out)
+	}
+	if !strings.Contains(out, ".name = \"sensor-1\"") || !strings.Contains(out, "device.pin = 4;") || !strings.Contains(out, "device.enabled = false;") {
+		t.Fatalf("expected object initializer and direct property writes, got:\n%s", out)
+	}
+	if strings.Contains(out, "const jikascript_object") {
+		t.Fatal("const object binding must retain mutable C fields")
+	}
+}
+
+func TestGenerateObjectFunctionArgumentAndReturn(t *testing.T) {
+	program, err := parser.ParseProgram(`function setPin(device) { device.pin = 4; return { pin: 4 }; }
+const device = { pin: 3 };
+const updated = setPin(device);`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	out := Generate(program)
+	if !strings.Contains(out, "static jikascript_object_1_t setPin(jikascript_object_1_t device)") {
+		t.Fatalf("expected object parameter and return type, got:\n%s", out)
+	}
+	if !strings.Contains(out, "updated = setPin(device);") {
+		t.Fatalf("expected object-return assignment, got:\n%s", out)
+	}
+}
+
+func TestGenerateInferredArrayOfObjects(t *testing.T) {
+	program, err := parser.ParseProgram(`let devices = [{ pin: 1 }, { pin: 2 }];`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	out := Generate(program)
+	if !strings.Contains(out, "jikascript_object_1_t data[2]") || !strings.Contains(out, "devices.data[0] = (jikascript_object_1_t){ .pin = 1 };") {
+		t.Fatalf("expected statically allocated array of record values, got:\n%s", out)
+	}
+}

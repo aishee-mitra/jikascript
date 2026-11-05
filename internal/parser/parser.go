@@ -674,6 +674,43 @@ func (p *Parser) parsePrimary() (ast.Expr, error) {
 		}
 		return nil, fmt.Errorf("line %d:%d: unexpected keyword '%s' in expression", p.cur.Line, p.cur.Column, p.cur.Literal)
 	case lexer.PUNCT:
+		if p.cur.Literal == "{" {
+			pos := ast.Position{Line: p.cur.Line, Column: p.cur.Column}
+			p.next()
+			properties := []ast.ObjectProperty{}
+			if !(p.cur.Type == lexer.PUNCT && p.cur.Literal == "}") {
+				for {
+					if p.cur.Type != lexer.IDENT && p.cur.Type != lexer.KEYWORD {
+						return nil, fmt.Errorf("line %d:%d: object property names must be identifiers", p.cur.Line, p.cur.Column)
+					}
+					propertyPos := ast.Position{Line: p.cur.Line, Column: p.cur.Column}
+					name := p.cur.Literal
+					p.next()
+					if p.cur.Type != lexer.PUNCT || p.cur.Literal != ":" {
+						return nil, fmt.Errorf("line %d:%d: expected ':' after object property '%s'", p.cur.Line, p.cur.Column, name)
+					}
+					p.next()
+					value, err := p.parseExpression()
+					if err != nil {
+						return nil, err
+					}
+					properties = append(properties, ast.ObjectProperty{Name: name, Value: value, Pos: propertyPos})
+					if p.cur.Type == lexer.PUNCT && p.cur.Literal == "," {
+						p.next()
+						if p.cur.Type == lexer.PUNCT && p.cur.Literal == "}" {
+							break
+						}
+						continue
+					}
+					break
+				}
+			}
+			if p.cur.Type != lexer.PUNCT || p.cur.Literal != "}" {
+				return nil, fmt.Errorf("line %d:%d: expected '}' after object literal", p.cur.Line, p.cur.Column)
+			}
+			p.next()
+			return &ast.ObjectLiteralExpr{Properties: properties, Pos: pos}, nil
+		}
 		if p.cur.Literal == "[" {
 			pos := ast.Position{Line: p.cur.Line, Column: p.cur.Column}
 			p.next()
@@ -721,7 +758,7 @@ func (p *Parser) parsePostfix(expr ast.Expr) (ast.Expr, error) {
 		switch {
 		case p.cur.Type == lexer.PUNCT && p.cur.Literal == ".":
 			p.next()
-			if p.cur.Type != lexer.IDENT {
+			if p.cur.Type != lexer.IDENT && p.cur.Type != lexer.KEYWORD {
 				return nil, fmt.Errorf("line %d:%d: expected identifier after '.'", p.cur.Line, p.cur.Column)
 			}
 			field := p.cur.Literal

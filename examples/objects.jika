@@ -1,0 +1,10 @@
+// Statically typed record literals with mutable properties.
+const device = {
+    name: "sensor-1",
+    pin: 3,
+    temperature: 24.5,
+    enabled: true
+};
+
+device.temperature = 25.1;
+device.enabled = false;

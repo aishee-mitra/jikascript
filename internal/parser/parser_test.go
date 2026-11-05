@@ -85,3 +85,14 @@ func TestParseEmptyBoundedArrayLiteral(t *testing.T) {
 		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
 	}
 }
+
+func TestParseObjectLiteralAndPropertyAssignment(t *testing.T) {
+	program, err := ParseProgram(`const device = { name: "sensor", pin: 3, enabled: true };
+device.pin = 4;`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+}

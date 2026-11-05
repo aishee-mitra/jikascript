@@ -142,3 +142,54 @@ readings.push("oops");
 		t.Fatalf("expected push type mismatch error, got %v", err)
 	}
 }
+
+func TestCheckAllowsConstObjectPropertyMutation(t *testing.T) {
+	program, err := parser.ParseProgram(`const device = { name: "sensor", pin: 3, enabled: true };
+device.pin = 4;
+device.enabled = false;
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err != nil {
+		t.Fatalf("unexpected checker error: %v", err)
+	}
+}
+
+func TestCheckRejectsInvalidObjectPropertyAndType(t *testing.T) {
+	for _, source := range []string{
+		`let device = { pin: 3 }; device.temperature;`,
+		`let device = { pin: 3 }; device.pin = "wrong";`,
+		`let device = { pin: 3, pin: 4 };`,
+	} {
+		program, err := parser.ParseProgram(source)
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		if err := Check(program); err == nil {
+			t.Fatalf("expected checker error for %q", source)
+		}
+	}
+}
+
+func TestCheckObjectFunctionReturn(t *testing.T) {
+	program, err := parser.ParseProgram(`function createDevice() { return { pin: 3, enabled: true }; }
+const device = createDevice();
+device.pin = 4;`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err != nil {
+		t.Fatalf("unexpected checker error: %v", err)
+	}
+}
+
+func TestCheckAllowsInferredArrayOfObjects(t *testing.T) {
+	program, err := parser.ParseProgram(`let devices = [{ pin: 1 }, { pin: 2 }];`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err != nil {
+		t.Fatalf("unexpected checker error: %v", err)
+	}
+}
