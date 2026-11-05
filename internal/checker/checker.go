@@ -22,6 +22,25 @@ func Check(program *ast.Program) error {
 	return nil
 }
 
+// pushScope appends a fresh lexical scope. It copies the existing stack so
+// callers never mutate a backing array shared with an outer frame.
+func pushScope(scopeStack []map[string]string) []map[string]string {
+	stack := make([]map[string]string, 0, len(scopeStack)+1)
+	stack = append(stack, scopeStack...)
+	return append(stack, map[string]string{})
+}
+
+// checkBlock checks each statement of a block body inside a new lexical scope.
+func checkBlock(body []ast.Stmt, scopeStack []map[string]string, taskNames map[string]struct{}, loopDepth int, switchDepth int, functionReturns map[string]string) error {
+	inner := pushScope(scopeStack)
+	for _, s := range body {
+		if err := checkStmt(s, inner, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[string]struct{}, loopDepth int, switchDepth int, functionReturns map[string]string) error {
 	current := scopeStack[len(scopeStack)-1]
 	switch node := stmt.(type) {
@@ -65,8 +84,11 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 			}
 			funcScope[param] = "param"
 		}
+		stack := make([]map[string]string, 0, len(scopeStack)+1)
+		stack = append(stack, scopeStack...)
+		stack = append(stack, funcScope)
 		for _, s := range node.Body {
-			if err := checkStmt(s, append(scopeStack, funcScope), taskNames, loopDepth, switchDepth, functionReturns); err != nil {
+			if err := checkStmt(s, stack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
 				return err
 			}
 		}
@@ -74,52 +96,45 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		if err := checkExpr(node.Cond, scopeStack); err != nil {
 			return err
 		}
-		for _, s := range node.Then {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
-				return err
-			}
+		if err := checkBlock(node.Then, scopeStack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
+			return err
 		}
-		for _, s := range node.Else {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
-				return err
-			}
+		if err := checkBlock(node.Else, scopeStack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
+			return err
 		}
 	case *ast.WhileStmt:
 		if err := checkExpr(node.Cond, scopeStack); err != nil {
 			return err
 		}
-		for _, s := range node.Body {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
-				return err
-			}
+		if err := checkBlock(node.Body, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
+			return err
 		}
 	case *ast.DoWhileStmt:
-		for _, s := range node.Body {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
-				return err
-			}
+		if err := checkBlock(node.Body, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
+			return err
 		}
 		if err := checkExpr(node.Cond, scopeStack); err != nil {
 			return err
 		}
 	case *ast.ForStmt:
+		inner := pushScope(scopeStack)
 		if node.Init != nil {
-			if err := checkStmt(node.Init, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
+			if err := checkStmt(node.Init, inner, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
 				return err
 			}
 		}
 		if node.Cond != nil {
-			if err := checkExpr(node.Cond, scopeStack); err != nil {
+			if err := checkExpr(node.Cond, inner); err != nil {
 				return err
 			}
 		}
 		for _, s := range node.Body {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
+			if err := checkStmt(s, inner, taskNames, loopDepth+1, switchDepth, functionReturns); err != nil {
 				return err
 			}
 		}
 		if node.Post != nil {
-			if err := checkExpr(node.Post, scopeStack); err != nil {
+			if err := checkExpr(node.Post, inner); err != nil {
 				return err
 			}
 		}
@@ -136,8 +151,11 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 			for _, param := range node.Callback.Params {
 				callbackScope[param] = "callback-param"
 			}
+			stack := make([]map[string]string, 0, len(scopeStack)+1)
+			stack = append(stack, scopeStack...)
+			stack = append(stack, callbackScope)
 			for _, s := range node.Callback.Body {
-				if err := checkStmt(s, append(scopeStack, callbackScope), taskNames, loopDepth, switchDepth, functionReturns); err != nil {
+				if err := checkStmt(s, stack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
 					return err
 				}
 			}
@@ -152,10 +170,8 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 					return err
 				}
 			}
-			for _, s := range c.Body {
-				if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth+1, functionReturns); err != nil {
-					return err
-				}
+			if err := checkBlock(c.Body, scopeStack, taskNames, loopDepth, switchDepth+1, functionReturns); err != nil {
+				return err
 			}
 		}
 	case *ast.BreakStmt:
