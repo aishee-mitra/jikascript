@@ -1,0 +1,9 @@
+const led = pin("PC1");
+
+led.output();
+
+task("blink", 1000, () => {
+    led.toggle();
+});
+
+scheduler.start();
