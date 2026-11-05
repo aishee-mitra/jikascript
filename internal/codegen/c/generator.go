@@ -667,71 +667,134 @@ func inferArrayElementType(elements []ast.Expr) string {
 	return "int32"
 }
 
-func collectObjectTypes(program *ast.Program) {
-	var visitExpr func(ast.Expr)
-	var visitStmt func(ast.Stmt)
-	visitExpr = func(expr ast.Expr) {
-		switch node := expr.(type) {
-		case *ast.ObjectLiteralExpr:
-			for _, property := range node.Properties {
-				visitExpr(property.Value)
-			}
-			shape := objectShapeForLiteral(node)
-			if _, exists := generatedObjects[shape]; !exists {
-				generatedObjects[shape] = objectMeta{Shape: shape, CName: fmt.Sprintf("jikascript_object_%d_t", len(generatedObjects)+1), Fields: node.Properties}
-			}
-		case *ast.ArrayLiteralExpr:
-			for _, element := range node.Elements {
-				visitExpr(element)
-			}
-		case *ast.CallExpr:
-			visitExpr(node.Function)
-			for _, arg := range node.Args {
-				visitExpr(arg)
-			}
-		case *ast.SelectorExpr:
-			visitExpr(node.Object)
-		case *ast.IndexExpr:
-			visitExpr(node.Object)
-			visitExpr(node.Index)
-		case *ast.BinaryExpr:
-			visitExpr(node.Left)
-			visitExpr(node.Right)
-		case *ast.UnaryExpr:
-			visitExpr(node.Expr)
+// walkExpr visits every sub-expression of expr, including expr itself.
+func walkExpr(expr ast.Expr, visit func(ast.Expr)) {
+	if expr == nil {
+		return
+	}
+	visit(expr)
+	walkExprChildren(expr, visit)
+}
+
+// walkExprChildren visits the child expressions of expr without visiting
+// expr itself.
+func walkExprChildren(expr ast.Expr, visit func(ast.Expr)) {
+	if expr == nil {
+		return
+	}
+	switch node := expr.(type) {
+	case *ast.ObjectLiteralExpr:
+		for _, property := range node.Properties {
+			walkExpr(property.Value, visit)
+		}
+	case *ast.ArrayLiteralExpr:
+		for _, element := range node.Elements {
+			walkExpr(element, visit)
+		}
+	case *ast.CallExpr:
+		walkExpr(node.Function, visit)
+		for _, arg := range node.Args {
+			walkExpr(arg, visit)
+		}
+	case *ast.SelectorExpr:
+		walkExpr(node.Object, visit)
+	case *ast.IndexExpr:
+		walkExpr(node.Object, visit)
+		walkExpr(node.Index, visit)
+	case *ast.BinaryExpr:
+		walkExpr(node.Left, visit)
+		walkExpr(node.Right, visit)
+	case *ast.UnaryExpr:
+		walkExpr(node.Expr, visit)
+	case *ast.ArrowFunctionExpr:
+		for _, s := range node.Body {
+			walkStmt(s, visit)
 		}
 	}
-	visitStmt = func(stmt ast.Stmt) {
-		switch node := stmt.(type) {
-		case *ast.VarDecl:
-			visitExpr(node.Value)
-		case *ast.ConstDecl:
-			visitExpr(node.Value)
-		case *ast.ExprStmt:
-			visitExpr(node.Expr)
-		case *ast.ReturnStmt:
-			visitExpr(node.Value)
-		case *ast.FunctionDecl:
-			for _, s := range node.Body {
-				visitStmt(s)
+}
+
+// walkStmt visits every sub-statement and sub-expression of stmt.
+func walkStmt(stmt ast.Stmt, visit func(ast.Expr)) {
+	switch node := stmt.(type) {
+	case nil:
+		return
+	case *ast.VarDecl:
+		walkExpr(node.Value, visit)
+	case *ast.ConstDecl:
+		walkExpr(node.Value, visit)
+	case *ast.ExprStmt:
+		walkExpr(node.Expr, visit)
+	case *ast.AssignStmt:
+		walkExpr(node.Value, visit)
+	case *ast.ReturnStmt:
+		walkExpr(node.Value, visit)
+	case *ast.FunctionDecl:
+		for _, s := range node.Body {
+			walkStmt(s, visit)
+		}
+	case *ast.TaskDecl:
+		walkExpr(node.Interval, visit)
+		if node.Callback != nil {
+			for _, s := range node.Callback.Body {
+				walkStmt(s, visit)
 			}
-		case *ast.IfStmt:
-			visitExpr(node.Cond)
-			for _, s := range node.Then {
-				visitStmt(s)
+		}
+	case *ast.IfStmt:
+		walkExpr(node.Cond, visit)
+		for _, s := range node.Then {
+			walkStmt(s, visit)
+		}
+		for _, s := range node.Else {
+			walkStmt(s, visit)
+		}
+	case *ast.WhileStmt:
+		walkExpr(node.Cond, visit)
+		for _, s := range node.Body {
+			walkStmt(s, visit)
+		}
+	case *ast.DoWhileStmt:
+		for _, s := range node.Body {
+			walkStmt(s, visit)
+		}
+		walkExpr(node.Cond, visit)
+	case *ast.ForStmt:
+		if node.Init != nil {
+			walkStmt(node.Init, visit)
+		}
+		walkExpr(node.Cond, visit)
+		for _, s := range node.Body {
+			walkStmt(s, visit)
+		}
+		walkExpr(node.Post, visit)
+	case *ast.SwitchStmt:
+		walkExpr(node.Expr, visit)
+		for _, c := range node.Cases {
+			walkExpr(c.Value, visit)
+			for _, s := range c.Body {
+				walkStmt(s, visit)
 			}
-			for _, s := range node.Else {
-				visitStmt(s)
-			}
-		case *ast.WhileStmt:
-			visitExpr(node.Cond)
-			for _, s := range node.Body {
-				visitStmt(s)
+		}
+	case *ast.BlockStmt:
+		for _, s := range node.Statements {
+			walkStmt(s, visit)
+		}
+	case *ast.BreakStmt, *ast.ContinueStmt:
+		// leaf statements
+	}
+}
+
+func collectObjectTypes(program *ast.Program) {
+	var register func(ast.Expr)
+	register = func(expr ast.Expr) {
+		if lit, ok := expr.(*ast.ObjectLiteralExpr); ok {
+			shape := objectShapeForLiteral(lit)
+			if _, exists := generatedObjects[shape]; !exists {
+				generatedObjects[shape] = objectMeta{Shape: shape, CName: fmt.Sprintf("jikascript_object_%d_t", len(generatedObjects)+1), Fields: lit.Properties}
 			}
 		}
 	}
 	for _, stmt := range program.Statements {
-		visitStmt(stmt)
+		walkStmt(stmt, register)
 	}
 }
 
@@ -817,20 +880,18 @@ func collectFunctionTypes(program *ast.Program) {
 		}
 		generatedFunctions[fn.Name] = meta
 	}
-	var visitExpr func(ast.Expr)
-	var visitStmt func(ast.Stmt)
-	visitExpr = func(expr ast.Expr) {
-		switch node := expr.(type) {
-		case *ast.CallExpr:
-			if ident, ok := node.Function.(*ast.Identifier); ok {
+	var visit func(ast.Expr)
+	visit = func(expr ast.Expr) {
+		if call, ok := expr.(*ast.CallExpr); ok {
+			if ident, ok := call.Function.(*ast.Identifier); ok {
 				if meta, exists := generatedFunctions[ident.Name]; exists {
-					for i, arg := range node.Args {
+					for i, arg := range call.Args {
 						if i < len(meta.ParamTypes) {
 							if object, ok := objectDeclMeta(arg); ok {
 								meta.ParamTypes[i] = object.CName
 							}
-							if ident, ok := arg.(*ast.Identifier); ok {
-								if cType, exists := generatedObjectBindings[ident.Name]; exists {
+							if argIdent, ok := arg.(*ast.Identifier); ok {
+								if cType, exists := generatedObjectBindings[argIdent.Name]; exists {
 									meta.ParamTypes[i] = cType
 								}
 							}
@@ -839,49 +900,35 @@ func collectFunctionTypes(program *ast.Program) {
 					generatedFunctions[ident.Name] = meta
 				}
 			}
-			visitExpr(node.Function)
-			for _, arg := range node.Args {
-				visitExpr(arg)
-			}
-		case *ast.BinaryExpr:
-			visitExpr(node.Left)
-			visitExpr(node.Right)
-		case *ast.SelectorExpr:
-			visitExpr(node.Object)
-		case *ast.IndexExpr:
-			visitExpr(node.Object)
-			visitExpr(node.Index)
 		}
-	}
-	visitStmt = func(stmt ast.Stmt) {
-		switch node := stmt.(type) {
-		case *ast.VarDecl:
-			visitExpr(node.Value)
-		case *ast.ConstDecl:
-			visitExpr(node.Value)
-		case *ast.ExprStmt:
-			visitExpr(node.Expr)
-		case *ast.ReturnStmt:
-			visitExpr(node.Value)
-		case *ast.FunctionDecl:
-			for _, s := range node.Body {
-				visitStmt(s)
-			}
-		case *ast.IfStmt:
-			for _, s := range node.Then {
-				visitStmt(s)
-			}
-			for _, s := range node.Else {
-				visitStmt(s)
-			}
-		}
+		walkExprChildren(expr, visit)
 	}
 	for _, stmt := range program.Statements {
-		visitStmt(stmt)
+		walkStmt(stmt, visit)
 	}
 }
 
 func collectObjectBindings(program *ast.Program) {
+	var visit func(ast.Expr)
+	visit = func(expr ast.Expr) {
+		if call, ok := expr.(*ast.CallExpr); ok {
+			if ident, ok := call.Function.(*ast.Identifier); ok {
+				if meta, exists := generatedFunctions[ident.Name]; exists {
+					for i, arg := range call.Args {
+						if i < len(meta.ParamTypes) {
+							if argIdent, ok := arg.(*ast.Identifier); ok {
+								if cType, exists := generatedObjectBindings[argIdent.Name]; exists {
+									meta.ParamTypes[i] = cType
+								}
+							}
+						}
+					}
+					generatedFunctions[ident.Name] = meta
+				}
+			}
+		}
+		walkExprChildren(expr, visit)
+	}
 	for _, stmt := range program.Statements {
 		switch node := stmt.(type) {
 		case *ast.VarDecl:
@@ -893,6 +940,7 @@ func collectObjectBindings(program *ast.Program) {
 				generatedObjectBindings[node.Name] = meta.CName
 			}
 		}
+		walkStmt(stmt, visit)
 	}
 }
 
