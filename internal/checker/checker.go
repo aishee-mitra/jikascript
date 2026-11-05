@@ -2,8 +2,10 @@ package checker
 
 import (
 	"fmt"
+	"strings"
 
 	"microjs/internal/ast"
+	"microjs/targets/ch32fun"
 )
 
 // Check validates the initial MicroJS subset with minimal semantic checks.
@@ -24,7 +26,11 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string) error {
 		if _, ok := current[node.Name]; ok {
 			return fmt.Errorf("line %d:%d: variable '%s' already declared in this scope", node.Pos.Line, node.Pos.Column, node.Name)
 		}
-		current[node.Name] = "var"
+		bindingKind, err := classifyBinding("var", node.Value)
+		if err != nil {
+			return fmt.Errorf("line %d:%d: %w", node.Pos.Line, node.Pos.Column, err)
+		}
+		current[node.Name] = bindingKind
 		if node.Value != nil {
 			if err := checkExpr(node.Value, scopeStack); err != nil {
 				return err
@@ -34,7 +40,11 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string) error {
 		if _, ok := current[node.Name]; ok {
 			return fmt.Errorf("line %d:%d: constant '%s' already declared in this scope", node.Pos.Line, node.Pos.Column, node.Name)
 		}
-		current[node.Name] = "const"
+		bindingKind, err := classifyBinding("const", node.Value)
+		if err != nil {
+			return fmt.Errorf("line %d:%d: %w", node.Pos.Line, node.Pos.Column, err)
+		}
+		current[node.Name] = bindingKind
 		if node.Value != nil {
 			if err := checkExpr(node.Value, scopeStack); err != nil {
 				return err
@@ -172,6 +182,13 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 			}
 		}
 	case *ast.SelectorExpr:
+		if ident, ok := node.Object.(*ast.Identifier); ok {
+			if kind, exists := lookup(scopeStack, ident.Name); exists && isPinBinding(kind) {
+				if !ch32fun.IsValidPinMethod(node.Field) {
+					return fmt.Errorf("line %d:%d: unsupported pin method '%s'", node.Pos.Line, node.Pos.Column, node.Field)
+				}
+			}
+		}
 		return checkExpr(node.Object, scopeStack)
 	case *ast.BinaryExpr:
 		if err := checkExpr(node.Left, scopeStack); err != nil {
@@ -243,6 +260,29 @@ func renderUnaryTarget(expr ast.Expr) string {
 		return ident.Name
 	}
 	return ""
+}
+
+func classifyBinding(baseKind string, value ast.Expr) (string, error) {
+	if call, ok := value.(*ast.CallExpr); ok {
+		if fn, ok := call.Function.(*ast.Identifier); ok && fn.Name == "pin" {
+			if len(call.Args) != 1 {
+				return "", fmt.Errorf("pin() expects exactly one argument")
+			}
+			pinName, ok := call.Args[0].(*ast.StringLiteral)
+			if !ok {
+				return "", fmt.Errorf("pin() argument must be a string literal")
+			}
+			if !ch32fun.IsValidPin(pinName.Value) {
+				return "", fmt.Errorf("unknown hardware pin %q", pinName.Value)
+			}
+			return "pin-" + baseKind, nil
+		}
+	}
+	return baseKind, nil
+}
+
+func isPinBinding(kind string) bool {
+	return strings.HasPrefix(kind, "pin-")
 }
 
 func builtin(name string) bool {

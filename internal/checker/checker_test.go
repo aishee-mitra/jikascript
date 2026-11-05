@@ -32,3 +32,23 @@ limit = 5;
 		t.Fatalf("expected const mutation error, got %v", err)
 	}
 }
+
+func TestCheckRejectsInvalidPin(t *testing.T) {
+	program, err := parser.ParseProgram(`const led = pin("PX99");`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "unknown hardware pin") {
+		t.Fatalf("expected invalid pin error, got %v", err)
+	}
+}
+
+func TestCheckRejectsUnsupportedPinMethod(t *testing.T) {
+	program, err := parser.ParseProgram(`const led = pin("PC1"); led.pulse();`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "unsupported pin method") {
+		t.Fatalf("expected unsupported pin method error, got %v", err)
+	}
+}
