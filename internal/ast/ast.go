@@ -20,7 +20,9 @@ type Expr interface{ exprNode() }
 // VarDecl describes a mutable binding.
 type VarDecl struct {
 	Name          string
+	Symbol        string
 	Type          string
+	ResolvedType  string
 	ArrayCapacity int
 	Value         Expr
 	Pos           Position
@@ -31,7 +33,9 @@ func (*VarDecl) stmtNode() {}
 // ConstDecl describes an immutable binding.
 type ConstDecl struct {
 	Name          string
+	Symbol        string
 	Type          string
+	ResolvedType  string
 	ArrayCapacity int
 	Value         Expr
 	Pos           Position
@@ -41,10 +45,14 @@ func (*ConstDecl) stmtNode() {}
 
 // FunctionDecl describes a named function.
 type FunctionDecl struct {
-	Name   string
-	Params []string
-	Body   []Stmt
-	Pos    Position
+	Name         string
+	Symbol       string
+	Params       []string
+	ParamTypes   []string
+	ParamSymbols []string
+	ReturnType   string
+	Body         []Stmt
+	Pos          Position
 }
 
 func (*FunctionDecl) stmtNode() {}
@@ -172,8 +180,9 @@ func (*ArrowFunctionExpr) exprNode() {}
 
 // Identifier references a variable or function.
 type Identifier struct {
-	Name string
-	Pos  Position
+	Name   string
+	Symbol string
+	Pos    Position
 }
 
 func (*Identifier) exprNode() {}

@@ -1,9 +1,14 @@
 package cgen
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
+	"jikascript/internal/checker"
 	"jikascript/internal/parser"
 )
 
@@ -207,6 +212,111 @@ func TestGenerateMapsHighLowConstants(t *testing.T) {
 	}
 	if !strings.Contains(out, "gpio_write(js_led, 1);") || !strings.Contains(out, "gpio_write(js_led, 0);") {
 		t.Fatalf("expected HIGH/LOW constants to map to C integer values, got:\n%s", out)
+	}
+}
+
+func TestGenerateInferredScalarTypesCompileAsC99(t *testing.T) {
+	program, err := parser.ParseProgram(`let count = 1;
+const ratio = 1.5;
+const enabled = true;
+const message = "Hello";
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := checker.Check(program); err != nil {
+		t.Fatalf("check error: %v", err)
+	}
+	out, err := Generate(program)
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+	for _, expected := range []string{
+		"static int32_t js_count = 1;",
+		"static const float js_ratio = 1.5;",
+		"static const bool js_enabled = true;",
+		"static const char * js_message = \"Hello\";",
+	} {
+		if !strings.Contains(out, expected) {
+			t.Fatalf("expected %q in generated C:\n%s", expected, out)
+		}
+	}
+
+	tmp := filepath.Join(t.TempDir(), "inferred.c")
+	if err := os.WriteFile(tmp, []byte(out), 0o600); err != nil {
+		t.Fatalf("write generated C: %v", err)
+	}
+	_, sourceFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve generator test location")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "..", "..", ".."))
+	cmd := exec.Command("gcc", "-std=c99", "-fsyntax-only", tmp,
+		"-I", filepath.Join(root, "runtime", "periodic"),
+		"-I", filepath.Join(root, "targets", "ch32fun", "runtime"))
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("generated C failed C99 syntax check: %v\n%s", err, output)
+	}
+}
+
+func TestGenerateTypedScalarFunctionAsC99(t *testing.T) {
+	program, err := parser.ParseProgram(`const result = add(1, 2);
+function add(a, b) { return a + b; }`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := checker.Check(program); err != nil {
+		t.Fatalf("check error: %v", err)
+	}
+	out, err := Generate(program)
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+	if !strings.Contains(out, "static int32_t js_add(int32_t js_a, int32_t js_b)") || !strings.Contains(out, "static int32_t js_result;") || !strings.Contains(out, "js_result = js_add(1, 2);") {
+		t.Fatalf("expected typed function output, got:\n%s", out)
+	}
+	tmp := filepath.Join(t.TempDir(), "function.c")
+	if err := os.WriteFile(tmp, []byte(out), 0o600); err != nil {
+		t.Fatalf("write generated C: %v", err)
+	}
+	_, sourceFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("resolve generator test location")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(sourceFile), "..", "..", ".."))
+	cmd := exec.Command("gcc", "-std=c99", "-fsyntax-only", tmp,
+		"-I", filepath.Join(root, "runtime", "periodic"),
+		"-I", filepath.Join(root, "targets", "ch32fun", "runtime"))
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("generated function C failed C99 syntax check: %v\n%s", err, output)
+	}
+}
+
+func TestGenerateLexicalShadowingUsesDistinctLocalSymbols(t *testing.T) {
+	program, err := parser.ParseProgram(`let value = 1;
+function read(value) {
+    if (true) {
+        let value = 2;
+        return value;
+    }
+    return value;
+}
+const result = read(value);`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := checker.Check(program); err != nil {
+		t.Fatalf("check error: %v", err)
+	}
+	out, err := Generate(program)
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+	if !strings.Contains(out, "static int32_t js_value = 1;") || !strings.Contains(out, "int32_t js_value_2 = 2;") || !strings.Contains(out, "return js_value_2;") {
+		t.Fatalf("expected shadowed value declarations, got:\n%s", out)
+	}
+	if strings.Count(out, "js_value") < 4 {
+		t.Fatalf("expected resolved references for shadowed bindings, got:\n%s", out)
 	}
 }
 

@@ -9,21 +9,421 @@ import (
 	"jikascript/targets/ch32fun"
 )
 
+type functionTypeInfo struct {
+	ParamTypes []string
+	ReturnType string
+}
+
 // Check validates the initial JikaScript subset with minimal semantic checks.
 func Check(program *ast.Program) error {
+	functionTypes, err := resolveFunctionTypes(program)
+	if err != nil {
+		return err
+	}
 	if err := validateFunctionReturnConsistency(program); err != nil {
 		return err
 	}
 	scopeStack := []map[string]string{{}}
 	taskNames := map[string]struct{}{}
-	functionReturns := inferFunctionObjectReturns(program)
+	functionReturns := map[string]string{}
 	functionArity := inferFunctionArity(program)
+	for _, stmt := range program.Statements {
+		if fn, ok := stmt.(*ast.FunctionDecl); ok {
+			info := functionTypes[fn.Name]
+			fn.ParamTypes = append([]string(nil), info.ParamTypes...)
+			fn.ReturnType = info.ReturnType
+			functionReturns[fn.Name] = info.ReturnType
+			scopeStack[0][fn.Name] = encodeFunctionBinding(info.ReturnType, info.ParamTypes...)
+		}
+	}
 	for _, stmt := range program.Statements {
 		if err := checkStmt(stmt, scopeStack, taskNames, 0, 0, functionReturns, functionArity); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func resolveFunctionTypes(program *ast.Program) (map[string]functionTypeInfo, error) {
+	infos := map[string]functionTypeInfo{}
+	for _, stmt := range program.Statements {
+		if fn, ok := stmt.(*ast.FunctionDecl); ok {
+			infos[fn.Name] = functionTypeInfo{ParamTypes: make([]string, len(fn.Params))}
+		}
+	}
+	for pass := 0; pass < len(infos)+2; pass++ {
+		scope := topLevelBindings(program, infos)
+		changed := false
+		var resolveErr error
+		for _, stmt := range program.Statements {
+			walkStatementExpressions(stmt, func(expr ast.Expr) {
+				call, ok := expr.(*ast.CallExpr)
+				if !ok {
+					return
+				}
+				ident, ok := call.Function.(*ast.Identifier)
+				if !ok {
+					return
+				}
+				info, exists := infos[ident.Name]
+				if !exists {
+					return
+				}
+				for i, arg := range call.Args {
+					if i >= len(info.ParamTypes) {
+						continue
+					}
+					if typ, ok := inferLiteralType(arg, []map[string]string{scope}); ok {
+						if info.ParamTypes[i] == "" {
+							info.ParamTypes[i] = typ
+							changed = true
+						} else if !typeCompatible(info.ParamTypes[i], typ) {
+							resolveErr = fmt.Errorf("line %d:%d: incompatible argument types for function '%s': parameter %d receives both %s and %s", call.Pos.Line, call.Pos.Column, ident.Name, i+1, info.ParamTypes[i], typ)
+						}
+					}
+				}
+				infos[ident.Name] = info
+			})
+		}
+		if resolveErr != nil {
+			return nil, resolveErr
+		}
+		for _, stmt := range program.Statements {
+			fn, ok := stmt.(*ast.FunctionDecl)
+			if !ok {
+				continue
+			}
+			info := infos[fn.Name]
+			functionScope := map[string]string{}
+			for i, param := range fn.Params {
+				if i < len(info.ParamTypes) && info.ParamTypes[i] != "" {
+					functionScope[param] = bindingForType(info.ParamTypes[i])
+				}
+			}
+			for i, param := range fn.Params {
+				if info.ParamTypes[i] == "" {
+					if typ := inferParameterUsage(fn.Body, param); typ != "" {
+						info.ParamTypes[i] = typ
+						functionScope[param] = bindingForType(typ)
+						changed = true
+					}
+				}
+			}
+			stack := []map[string]string{scope, functionScope}
+			for _, ret := range collectReturns(fn.Body) {
+				if ret.Value == nil {
+					if info.ReturnType == "" {
+						info.ReturnType = "void"
+						changed = true
+					}
+					continue
+				}
+				typ, known := inferLiteralType(ret.Value, stack)
+				if !known {
+					if binary, ok := ret.Value.(*ast.BinaryExpr); ok && isNumericOperator(binary.Op) {
+						left, leftOK := inferLiteralType(binary.Left, stack)
+						right, rightOK := inferLiteralType(binary.Right, stack)
+						if leftOK && rightOK && (!isNumericType(left) || !isNumericType(right)) {
+							return nil, fmt.Errorf("line %d:%d: operator '%s' requires numeric operands", binary.Pos.Line, binary.Pos.Column, binary.Op)
+						}
+					}
+					continue
+				}
+				if info.ReturnType == "" {
+					info.ReturnType = typ
+					changed = true
+				} else if !returnTypeCompatible(info.ReturnType, typ) {
+					return nil, fmt.Errorf("line %d:%d: inconsistent return type in function '%s': expected %s, got %s", ret.Pos.Line, ret.Pos.Column, fn.Name, info.ReturnType, typ)
+				} else if isNumericType(info.ReturnType) && isNumericType(typ) {
+					merged := mergeNumericType(info.ReturnType, typ)
+					if merged != info.ReturnType {
+						info.ReturnType = merged
+						changed = true
+					}
+				}
+			}
+			infos[fn.Name] = info
+		}
+		if !changed {
+			break
+		}
+	}
+	for _, stmt := range program.Statements {
+		fn, ok := stmt.(*ast.FunctionDecl)
+		if !ok {
+			continue
+		}
+		info := infos[fn.Name]
+		for i, typ := range info.ParamTypes {
+			if typ == "" {
+				return nil, fmt.Errorf("line %d:%d: cannot resolve type of parameter '%s' in function '%s'", fn.Pos.Line, fn.Pos.Column, fn.Params[i], fn.Name)
+			}
+		}
+		if info.ReturnType == "" {
+			return nil, fmt.Errorf("line %d:%d: cannot resolve return type of function '%s'", fn.Pos.Line, fn.Pos.Column, fn.Name)
+		}
+	}
+	return infos, nil
+}
+
+func topLevelBindings(program *ast.Program, infos map[string]functionTypeInfo) map[string]string {
+	scope := map[string]string{}
+	for name, info := range infos {
+		scope[name] = encodeFunctionBinding(info.ReturnType, info.ParamTypes...)
+	}
+	for _, stmt := range program.Statements {
+		var name, declared string
+		var value ast.Expr
+		switch node := stmt.(type) {
+		case *ast.VarDecl:
+			name, declared, value = node.Name, node.Type, node.Value
+		case *ast.ConstDecl:
+			name, declared, value = node.Name, node.Type, node.Value
+		default:
+			continue
+		}
+		if declared == "" {
+			if typ, ok := inferLiteralType(value, []map[string]string{scope}); ok && !strings.Contains(typ, ":") {
+				declared = typ
+			}
+		}
+		if declared == "" {
+			if _, ok := value.(*ast.ObjectLiteralExpr); ok {
+				declared = objectTypeFromLiteral(value.(*ast.ObjectLiteralExpr), []map[string]string{scope})
+			}
+		}
+		if declared != "" {
+			if strings.Contains(declared, ":") {
+				scope[name] = encodeObjectBinding("var", declared)
+			} else {
+				scope[name] = bindingForType(declared)
+			}
+		}
+	}
+	return scope
+}
+
+func bindingForType(typ string) string {
+	if strings.Contains(typ, ":") {
+		return encodeObjectBinding("param", typ)
+	}
+	return encodeScalarBinding("param", typ)
+}
+
+func encodeFunctionBinding(returnType string, paramTypes ...string) string {
+	return "function-" + returnType + "|" + strings.Join(paramTypes, ",")
+}
+
+func functionReturnType(binding string) (string, bool) {
+	if !strings.HasPrefix(binding, "function-") {
+		return "", false
+	}
+	value := strings.TrimPrefix(binding, "function-")
+	if separator := strings.IndexByte(value, '|'); separator >= 0 {
+		value = value[:separator]
+	}
+	return value, true
+}
+
+func functionParamTypes(binding string) ([]string, bool) {
+	if !strings.HasPrefix(binding, "function-") {
+		return nil, false
+	}
+	value := strings.TrimPrefix(binding, "function-")
+	separator := strings.IndexByte(value, '|')
+	if separator < 0 || separator == len(value)-1 {
+		return []string{}, true
+	}
+	return strings.Split(value[separator+1:], ","), true
+}
+
+func inferParameterUsage(stmts []ast.Stmt, name string) string {
+	var result string
+	var visitExpr func(ast.Expr, string)
+	visitExpr = func(expr ast.Expr, context string) {
+		switch node := expr.(type) {
+		case *ast.Identifier:
+			if node.Name == name && result == "" {
+				if context == "condition" || context == "logical" {
+					result = "boolean"
+				} else if context == "numeric" {
+					result = "int32"
+				}
+			}
+		case *ast.BinaryExpr:
+			if node.Op == "&&" || node.Op == "||" || isEqualityOp(node.Op) {
+				visitExpr(node.Left, "logical")
+				visitExpr(node.Right, "logical")
+			} else {
+				visitExpr(node.Left, "numeric")
+				visitExpr(node.Right, "numeric")
+			}
+		case *ast.UnaryExpr:
+			visitExpr(node.Expr, "numeric")
+		case *ast.CallExpr:
+			for _, arg := range node.Args {
+				visitExpr(arg, "")
+			}
+		case *ast.SelectorExpr:
+			visitExpr(node.Object, "")
+		}
+	}
+	var visitStmt func(ast.Stmt)
+	visitStmt = func(stmt ast.Stmt) {
+		switch node := stmt.(type) {
+		case *ast.IfStmt:
+			visitExpr(node.Cond, "condition")
+			for _, s := range node.Then {
+				visitStmt(s)
+			}
+			for _, s := range node.Else {
+				visitStmt(s)
+			}
+		case *ast.WhileStmt:
+			visitExpr(node.Cond, "condition")
+			for _, s := range node.Body {
+				visitStmt(s)
+			}
+		case *ast.DoWhileStmt:
+			for _, s := range node.Body {
+				visitStmt(s)
+			}
+			visitExpr(node.Cond, "condition")
+		case *ast.ForStmt:
+			if node.Init != nil {
+				visitStmt(node.Init)
+			}
+			visitExpr(node.Cond, "condition")
+			visitExpr(node.Post, "")
+			for _, s := range node.Body {
+				visitStmt(s)
+			}
+		case *ast.SwitchStmt:
+			visitExpr(node.Expr, "")
+			for _, c := range node.Cases {
+				for _, s := range c.Body {
+					visitStmt(s)
+				}
+			}
+		case *ast.ReturnStmt:
+			visitExpr(node.Value, "")
+		case *ast.ExprStmt:
+			visitExpr(node.Expr, "")
+		case *ast.VarDecl:
+			visitExpr(node.Value, "")
+		case *ast.ConstDecl:
+			visitExpr(node.Value, "")
+		case *ast.AssignStmt:
+			visitExpr(node.Value, "")
+		case *ast.BlockStmt:
+			for _, s := range node.Statements {
+				visitStmt(s)
+			}
+		}
+	}
+	for _, stmt := range stmts {
+		visitStmt(stmt)
+	}
+	return result
+}
+
+func walkStatementExpressions(stmt ast.Stmt, visit func(ast.Expr)) {
+	var walkStmt func(ast.Stmt)
+	var walkExpr func(ast.Expr)
+	walkExpr = func(expr ast.Expr) {
+		if expr == nil {
+			return
+		}
+		visit(expr)
+		switch node := expr.(type) {
+		case *ast.CallExpr:
+			walkExpr(node.Function)
+			for _, arg := range node.Args {
+				walkExpr(arg)
+			}
+		case *ast.SelectorExpr:
+			walkExpr(node.Object)
+		case *ast.IndexExpr:
+			walkExpr(node.Object)
+			walkExpr(node.Index)
+		case *ast.BinaryExpr:
+			walkExpr(node.Left)
+			walkExpr(node.Right)
+		case *ast.UnaryExpr:
+			walkExpr(node.Expr)
+		case *ast.ArrayLiteralExpr:
+			for _, elem := range node.Elements {
+				walkExpr(elem)
+			}
+		case *ast.ObjectLiteralExpr:
+			for _, prop := range node.Properties {
+				walkExpr(prop.Value)
+			}
+		case *ast.ArrowFunctionExpr:
+			for _, body := range node.Body {
+				walkStmt(body)
+			}
+		}
+	}
+	walkStmt = func(node ast.Stmt) {
+		switch s := node.(type) {
+		case *ast.VarDecl:
+			walkExpr(s.Value)
+		case *ast.ConstDecl:
+			walkExpr(s.Value)
+		case *ast.FunctionDecl:
+			for _, body := range s.Body {
+				walkStmt(body)
+			}
+		case *ast.ReturnStmt:
+			walkExpr(s.Value)
+		case *ast.ExprStmt:
+			walkExpr(s.Expr)
+		case *ast.AssignStmt:
+			walkExpr(s.Value)
+		case *ast.IfStmt:
+			walkExpr(s.Cond)
+			for _, b := range s.Then {
+				walkStmt(b)
+			}
+			for _, b := range s.Else {
+				walkStmt(b)
+			}
+		case *ast.WhileStmt:
+			walkExpr(s.Cond)
+			for _, b := range s.Body {
+				walkStmt(b)
+			}
+		case *ast.DoWhileStmt:
+			for _, b := range s.Body {
+				walkStmt(b)
+			}
+			walkExpr(s.Cond)
+		case *ast.ForStmt:
+			walkStmt(s.Init)
+			walkExpr(s.Cond)
+			walkExpr(s.Post)
+			for _, b := range s.Body {
+				walkStmt(b)
+			}
+		case *ast.SwitchStmt:
+			walkExpr(s.Expr)
+			for _, c := range s.Cases {
+				walkExpr(c.Value)
+				for _, b := range c.Body {
+					walkStmt(b)
+				}
+			}
+		case *ast.TaskDecl:
+			walkExpr(s.Interval)
+			walkExpr(s.Callback)
+		case *ast.BlockStmt:
+			for _, b := range s.Statements {
+				walkStmt(b)
+			}
+		}
+	}
+	walkStmt(stmt)
 }
 
 func validateFunctionReturnConsistency(program *ast.Program) error {
@@ -149,6 +549,9 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		if isArrayBinding(bindingKind) && len(scopeStack) > 1 {
 			return fmt.Errorf("line %d:%d: array declarations are only supported at top-level scope", node.Pos.Line, node.Pos.Column)
 		}
+		if resolvedType, ok := scalarBindingType(bindingKind); ok {
+			node.ResolvedType = resolvedType
+		}
 		current[node.Name] = bindingKind
 		if node.Value != nil {
 			if err := checkExpr(node.Value, scopeStack, functionArity); err != nil {
@@ -166,6 +569,9 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		if isArrayBinding(bindingKind) && len(scopeStack) > 1 {
 			return fmt.Errorf("line %d:%d: array declarations are only supported at top-level scope", node.Pos.Line, node.Pos.Column)
 		}
+		if resolvedType, ok := scalarBindingType(bindingKind); ok {
+			node.ResolvedType = resolvedType
+		}
 		current[node.Name] = bindingKind
 		if node.Value != nil {
 			if err := checkExpr(node.Value, scopeStack, functionArity); err != nil {
@@ -173,16 +579,20 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 			}
 		}
 	case *ast.FunctionDecl:
-		if _, ok := current[node.Name]; ok {
+		if existing, ok := current[node.Name]; ok && !strings.HasPrefix(existing, "function-") {
 			return fmt.Errorf("line %d:%d: function '%s' already declared", node.Pos.Line, node.Pos.Column, node.Name)
 		}
-		current[node.Name] = "function"
+		current[node.Name] = encodeFunctionBinding(node.ReturnType, node.ParamTypes...)
 		funcScope := map[string]string{}
-		for _, param := range node.Params {
+		for i, param := range node.Params {
 			if _, exists := funcScope[param]; exists {
 				return fmt.Errorf("line %d:%d: parameter '%s' already declared", node.Pos.Line, node.Pos.Column, param)
 			}
-			funcScope[param] = "param"
+			paramType := "int32"
+			if i < len(node.ParamTypes) {
+				paramType = node.ParamTypes[i]
+			}
+			funcScope[param] = bindingForType(paramType)
 		}
 		stack := make([]map[string]string, 0, len(scopeStack)+1)
 		stack = append(stack, scopeStack...)
@@ -361,6 +771,21 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string, functionArity map[
 				return err
 			}
 		}
+		if fn, ok := node.Function.(*ast.Identifier); ok {
+			if binding, exists := lookup(scopeStack, fn.Name); exists {
+				if params, isFunction := functionParamTypes(binding); isFunction {
+					for i, expected := range params {
+						actual, known := inferLiteralType(node.Args[i], scopeStack)
+						if !known {
+							return fmt.Errorf("line %d:%d: cannot resolve type of argument %d to function '%s'", node.Pos.Line, node.Pos.Column, i+1, fn.Name)
+						}
+						if !typeCompatible(expected, actual) {
+							return fmt.Errorf("line %d:%d: argument %d to function '%s' expects %s, got %s", node.Pos.Line, node.Pos.Column, i+1, fn.Name, expected, actual)
+						}
+					}
+				}
+			}
+		}
 	case *ast.SelectorExpr:
 		if ident, ok := node.Object.(*ast.Identifier); ok {
 			if kind, exists := lookup(scopeStack, ident.Name); exists {
@@ -404,9 +829,14 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string, functionArity map[
 		if err := checkExpr(node.Left, scopeStack, functionArity); err != nil {
 			return err
 		}
+		leftType, leftKnown := inferLiteralType(node.Left, scopeStack)
+		rightType, rightKnown := inferLiteralType(node.Right, scopeStack)
+		if leftKnown && rightKnown && (isNumericOperator(node.Op) || isRelationalOperator(node.Op)) {
+			if !isNumericType(leftType) || !isNumericType(rightType) {
+				return fmt.Errorf("line %d:%d: operator '%s' requires numeric operands", node.Pos.Line, node.Pos.Column, node.Op)
+			}
+		}
 		if isEqualityOp(node.Op) {
-			leftType, leftKnown := inferLiteralType(node.Left, scopeStack)
-			rightType, rightKnown := inferLiteralType(node.Right, scopeStack)
 			if leftKnown && rightKnown && !equalityComparable(leftType, rightType) {
 				return fmt.Errorf("line %d:%d: cannot compare %s and %s with %s", node.Pos.Line, node.Pos.Column, leftType, rightType, node.Op)
 			}
@@ -619,7 +1049,13 @@ func classifyBinding(baseKind string, declaredType string, declaredCapacity int,
 	if call, ok := value.(*ast.CallExpr); ok {
 		if fn, ok := call.Function.(*ast.Identifier); ok {
 			if shape, ok := functionReturns[fn.Name]; ok {
-				return encodeObjectBinding(baseKind, shape), nil
+				if shape == "void" {
+					return "", fmt.Errorf("function '%s' does not return a value", fn.Name)
+				}
+				if strings.Contains(shape, ":") {
+					return encodeObjectBinding(baseKind, shape), nil
+				}
+				return encodeScalarBinding(baseKind, shape), nil
 			}
 		}
 		if fn, ok := call.Function.(*ast.Identifier); ok && fn.Name == "pin" {
@@ -803,6 +1239,13 @@ func inferLiteralType(expr ast.Expr, scopeStack []map[string]string) (string, bo
 		if ident, ok := node.Function.(*ast.Identifier); ok && ident.Name == "pin" {
 			return "int32", true
 		}
+		if ident, ok := node.Function.(*ast.Identifier); ok && scopeStack != nil {
+			if binding, exists := lookup(scopeStack, ident.Name); exists {
+				if returnType, ok := functionReturnType(binding); ok && returnType != "void" {
+					return returnType, true
+				}
+			}
+		}
 		return "", false
 	case *ast.SelectorExpr:
 		if ident, ok := node.Object.(*ast.Identifier); ok && scopeStack != nil {
@@ -813,6 +1256,24 @@ func inferLiteralType(expr ast.Expr, scopeStack []map[string]string) (string, bo
 		return "", false
 	case *ast.ObjectLiteralExpr:
 		return objectTypeFromLiteral(node, scopeStack), true
+	case *ast.BinaryExpr:
+		if node.Op == "&&" || node.Op == "||" || isEqualityOp(node.Op) || node.Op == "<" || node.Op == ">" || node.Op == "<=" || node.Op == ">=" {
+			return "boolean", true
+		}
+		left, leftOK := inferLiteralType(node.Left, scopeStack)
+		right, rightOK := inferLiteralType(node.Right, scopeStack)
+		if leftOK && rightOK && isNumericType(left) && isNumericType(right) {
+			return mergeNumericType(left, right), true
+		}
+		if node.Op == "=" || isAssignmentOp(node.Op) {
+			return left, leftOK
+		}
+		return "", false
+	case *ast.UnaryExpr:
+		if node.Op == "!" {
+			return "boolean", true
+		}
+		return inferLiteralType(node.Expr, scopeStack)
 	default:
 		return "", false
 	}
@@ -894,6 +1355,24 @@ func numericAssignable(expected, actual string) bool {
 func isEqualityOp(op string) bool {
 	switch op {
 	case "==", "===", "!=", "!==":
+		return true
+	default:
+		return false
+	}
+}
+
+func isNumericOperator(op string) bool {
+	switch op {
+	case "+", "-", "*", "/", "%", "&", "|", "^", "<<", ">>":
+		return true
+	default:
+		return false
+	}
+}
+
+func isRelationalOperator(op string) bool {
+	switch op {
+	case "<", ">", "<=", ">=":
 		return true
 	default:
 		return false

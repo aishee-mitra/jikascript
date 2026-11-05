@@ -34,6 +34,225 @@ type functionMeta struct {
 	ReturnType string
 }
 
+type symbolAnnotator struct {
+	next   int
+	scopes []map[string]string
+}
+
+func annotateSymbols(program *ast.Program) {
+	a := &symbolAnnotator{scopes: []map[string]string{{}}}
+	for _, stmt := range program.Statements {
+		if fn, ok := stmt.(*ast.FunctionDecl); ok {
+			fn.Symbol = a.declare(fn.Name)
+		}
+	}
+	for _, stmt := range program.Statements {
+		a.stmt(stmt)
+	}
+}
+
+func (a *symbolAnnotator) declare(name string) string {
+	scopeClass := "local"
+	if len(a.scopes) == 1 {
+		scopeClass = "global"
+	}
+	symbol := fmt.Sprintf("%s_symbol_%d_%s", scopeClass, a.next, normalizeIdentifier(name))
+	a.next++
+	a.scopes[len(a.scopes)-1][name] = symbol
+	return symbol
+}
+
+func (a *symbolAnnotator) lookup(name string) string {
+	for i := len(a.scopes) - 1; i >= 0; i-- {
+		if symbol, ok := a.scopes[i][name]; ok {
+			return symbol
+		}
+	}
+	return ""
+}
+
+func (a *symbolAnnotator) push() { a.scopes = append(a.scopes, map[string]string{}) }
+
+func (a *symbolAnnotator) pop() { a.scopes = a.scopes[:len(a.scopes)-1] }
+
+func (a *symbolAnnotator) block(body []ast.Stmt) {
+	a.push()
+	for _, stmt := range body {
+		a.stmt(stmt)
+	}
+	a.pop()
+}
+
+func (a *symbolAnnotator) stmt(stmt ast.Stmt) {
+	switch node := stmt.(type) {
+	case *ast.VarDecl:
+		node.Symbol = a.declare(node.Name)
+		a.expr(node.Value)
+	case *ast.ConstDecl:
+		node.Symbol = a.declare(node.Name)
+		a.expr(node.Value)
+	case *ast.FunctionDecl:
+		if node.Symbol == "" {
+			node.Symbol = a.lookup(node.Name)
+			if node.Symbol == "" {
+				node.Symbol = a.declare(node.Name)
+			}
+		}
+		a.push()
+		node.ParamSymbols = make([]string, len(node.Params))
+		for i, param := range node.Params {
+			node.ParamSymbols[i] = a.declare(param)
+		}
+		for _, body := range node.Body {
+			a.stmt(body)
+		}
+		a.pop()
+	case *ast.ReturnStmt:
+		a.expr(node.Value)
+	case *ast.ExprStmt:
+		a.expr(node.Expr)
+	case *ast.AssignStmt:
+		if symbol := a.lookup(node.Target); symbol != "" {
+			// AssignStmt predates symbol annotations and stores its target as text.
+			node.Target = symbol
+		}
+		a.expr(node.Value)
+	case *ast.IfStmt:
+		a.expr(node.Cond)
+		a.block(node.Then)
+		a.block(node.Else)
+	case *ast.WhileStmt:
+		a.expr(node.Cond)
+		a.block(node.Body)
+	case *ast.DoWhileStmt:
+		a.block(node.Body)
+		a.expr(node.Cond)
+	case *ast.ForStmt:
+		a.push()
+		if node.Init != nil {
+			a.stmt(node.Init)
+		}
+		a.expr(node.Cond)
+		for _, body := range node.Body {
+			a.stmt(body)
+		}
+		a.expr(node.Post)
+		a.pop()
+	case *ast.SwitchStmt:
+		a.expr(node.Expr)
+		for _, clause := range node.Cases {
+			a.push()
+			a.expr(clause.Value)
+			for _, body := range clause.Body {
+				a.stmt(body)
+			}
+			a.pop()
+		}
+	case *ast.TaskDecl:
+		a.expr(node.Interval)
+		if node.Callback != nil {
+			a.push()
+			for _, param := range node.Callback.Params {
+				a.declare(param)
+			}
+			for _, body := range node.Callback.Body {
+				a.stmt(body)
+			}
+			a.pop()
+		}
+	case *ast.BlockStmt:
+		a.block(node.Statements)
+	}
+}
+
+func (a *symbolAnnotator) expr(expr ast.Expr) {
+	if expr == nil {
+		return
+	}
+	switch node := expr.(type) {
+	case *ast.Identifier:
+		node.Symbol = a.lookup(node.Name)
+	case *ast.CallExpr:
+		a.expr(node.Function)
+		for _, arg := range node.Args {
+			a.expr(arg)
+		}
+	case *ast.SelectorExpr:
+		a.expr(node.Object)
+	case *ast.IndexExpr:
+		a.expr(node.Object)
+		a.expr(node.Index)
+	case *ast.BinaryExpr:
+		a.expr(node.Left)
+		a.expr(node.Right)
+	case *ast.UnaryExpr:
+		a.expr(node.Expr)
+	case *ast.ArrayLiteralExpr:
+		for _, elem := range node.Elements {
+			a.expr(elem)
+		}
+	case *ast.ObjectLiteralExpr:
+		for _, property := range node.Properties {
+			a.expr(property.Value)
+		}
+	case *ast.ArrowFunctionExpr:
+		a.push()
+		for _, param := range node.Params {
+			a.declare(param)
+		}
+		for _, body := range node.Body {
+			a.stmt(body)
+		}
+		a.pop()
+	}
+}
+
+func symbolKey(symbol, name string) string {
+	if symbol != "" {
+		return symbol
+	}
+	return name
+}
+
+func sanitizeBinding(symbol, name string) string {
+	if symbol == "" {
+		return sanitizeName(name)
+	}
+	if existing, ok := mangledIdentifiers[symbol]; ok {
+		return existing
+	}
+	normalized := normalizeIdentifier(name)
+	if normalized == "" {
+		normalized = "anon"
+	}
+	candidate := "js_" + normalized
+	for isReservedCIdentifier(candidate) {
+		candidate = "js_" + candidate
+	}
+	base := candidate
+	if owner, exists := usedCIdentifiers[candidate]; exists && owner != symbol && symbolScope(owner) == symbolScope(symbol) {
+		for i := 2; ; i++ {
+			candidate = fmt.Sprintf("%s_%d", base, i)
+			if isReservedCIdentifier(candidate) {
+				continue
+			}
+			if _, used := usedCIdentifiers[candidate]; !used {
+				break
+			}
+		}
+	}
+	mangledIdentifiers[symbol] = candidate
+	usedCIdentifiers[candidate] = symbol
+	return candidate
+}
+
+func symbolScope(symbol string) string {
+	if strings.HasPrefix(symbol, "global_") {
+		return "global"
+	}
+	return "local"
+}
+
 // Generate emits readable C99-like output for the initial JikaScript subset.
 func Generate(program *ast.Program) (string, error) {
 	var b strings.Builder
@@ -44,6 +263,7 @@ func Generate(program *ast.Program) (string, error) {
 	mangledIdentifiers = map[string]string{}
 	usedCIdentifiers = map[string]string{}
 	generationErr = nil
+	annotateSymbols(program)
 	collectObjectTypes(program)
 	collectObjectBindings(program)
 	collectFunctionTypes(program)
@@ -76,7 +296,7 @@ func Generate(program *ast.Program) (string, error) {
 			taskHandlers = append(taskHandlers, taskRegistration{name: taskName, interval: renderExpr(node.Interval)})
 		case *ast.VarDecl:
 			if meta, ok := objectDeclMeta(node.Value); ok {
-				b.WriteString(renderObjectTopLevelDecl(meta, node.Name, node.Value))
+				b.WriteString(renderObjectTopLevelDecl(meta, node.Name, node.Symbol, node.Value))
 				break
 			}
 			if meta, initStmts, ok := buildArrayDeclFromVar(node); ok {
@@ -96,7 +316,7 @@ func Generate(program *ast.Program) (string, error) {
 		case *ast.ConstDecl:
 			if meta, ok := objectDeclMeta(node.Value); ok {
 				// `const` freezes the JikaScript binding, not the record contents.
-				b.WriteString(renderObjectTopLevelDecl(meta, node.Name, node.Value))
+				b.WriteString(renderObjectTopLevelDecl(meta, node.Name, node.Symbol, node.Value))
 				break
 			}
 			if meta, initStmts, ok := buildArrayDeclFromConst(node); ok {
@@ -175,7 +395,7 @@ func emitFunction(node *ast.FunctionDecl) string {
 	if returnType == "" {
 		returnType = "int"
 	}
-	b.WriteString(fmt.Sprintf("static %s %s(%s) {\n", returnType, sanitizeName(node.Name), renderTypedParams(node.Params, meta.ParamTypes)))
+	b.WriteString(fmt.Sprintf("static %s %s(%s) {\n", returnType, sanitizeBinding(node.Symbol, node.Name), renderTypedParams(node.Params, meta.ParamTypes, node.ParamSymbols)))
 	for _, stmt := range node.Body {
 		b.WriteString(renderStmt(stmt, "    "))
 	}
@@ -186,9 +406,9 @@ func emitFunction(node *ast.FunctionDecl) string {
 func renderVarDecl(node interface{}, isConst bool) string {
 	switch v := node.(type) {
 	case *ast.VarDecl:
-		return renderLocalDecl(v.Name, v.Type, v.Value, false)
+		return renderLocalDecl(v.Name, v.Symbol, effectiveType(v.Type, v.ResolvedType), v.Value, false)
 	case *ast.ConstDecl:
-		return renderLocalDecl(v.Name, v.Type, v.Value, true)
+		return renderLocalDecl(v.Name, v.Symbol, effectiveType(v.Type, v.ResolvedType), v.Value, true)
 	}
 	return ""
 }
@@ -197,23 +417,24 @@ func renderVarDecl(node interface{}, isConst bool) string {
 // never static: they live on the stack and are initialized at runtime.
 // `const` freezes the JikaScript binding, not record contents, so object
 // locals are never C-const (property writes must remain legal).
-func renderLocalDecl(name, declaredType string, value ast.Expr, isConst bool) string {
+func renderLocalDecl(name, symbol, declaredType string, value ast.Expr, isConst bool) string {
+	cName := sanitizeBinding(symbol, name)
 	constPrefix := ""
 	if isConst && !isObjectValue(value) {
 		constPrefix = "const "
 	}
 	if meta, ok := objectDeclMeta(value); ok {
-		return fmt.Sprintf("%s%s %s = %s;\n", constPrefix, meta.CName, sanitizeName(name), renderExpr(value))
+		return fmt.Sprintf("%s%s %s = %s;\n", constPrefix, meta.CName, cName, renderExpr(value))
 	}
 	if cType, ok := functionReturnCType(value); ok {
-		return fmt.Sprintf("%s%s %s = %s;\n", constPrefix, cType, sanitizeName(name), renderExpr(value))
+		return fmt.Sprintf("%s%s %s = %s;\n", constPrefix, cType, cName, renderExpr(value))
 	}
 	if isPinCall(value) {
 		// pin() returns a hardware handle; declare then initialize separately
 		// so the call stays inside the function body.
-		return fmt.Sprintf("%sint %s = %s;\n", constPrefix, sanitizeName(name), renderExpr(value))
+		return fmt.Sprintf("%sint %s = %s;\n", constPrefix, cName, renderExpr(value))
 	}
-	return fmt.Sprintf("%s%s %s = %s;\n", constPrefix, typeName(declaredType, isConst), sanitizeName(name), renderExpr(value))
+	return fmt.Sprintf("%s%s %s = %s;\n", constPrefix, typeName(declaredType, isConst), cName, renderExpr(value))
 }
 
 func isObjectValue(expr ast.Expr) bool {
@@ -233,26 +454,35 @@ func isPinCall(expr ast.Expr) bool {
 func renderTopLevelDecl(node interface{}, isConst bool) (string, string) {
 	switch v := node.(type) {
 	case *ast.VarDecl:
-		name := sanitizeName(v.Name)
+		name := sanitizeBinding(v.Symbol, v.Name)
+		declaredType := effectiveType(v.Type, v.ResolvedType)
 		if cType, ok := functionReturnCType(v.Value); ok {
 			return fmt.Sprintf("static %s %s;\n", cType, name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
 		}
 		if isStaticInitSafe(v.Value) {
-			return fmt.Sprintf("static %s %s = %s;\n", typeName(v.Type, false), name, renderExpr(v.Value)), ""
+			return fmt.Sprintf("static %s %s = %s;\n", typeName(declaredType, false), name, renderExpr(v.Value)), ""
 		}
-		return fmt.Sprintf("static %s %s;\n", typeName(v.Type, false), name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
+		return fmt.Sprintf("static %s %s;\n", typeName(declaredType, false), name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
 	case *ast.ConstDecl:
-		name := sanitizeName(v.Name)
+		name := sanitizeBinding(v.Symbol, v.Name)
+		declaredType := effectiveType(v.Type, v.ResolvedType)
 		if cType, ok := functionReturnCType(v.Value); ok {
 			return fmt.Sprintf("static %s %s;\n", cType, name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
 		}
 		if isStaticInitSafe(v.Value) {
-			return fmt.Sprintf("static const %s %s = %s;\n", typeName(v.Type, true), name, renderExpr(v.Value)), ""
+			return fmt.Sprintf("static const %s %s = %s;\n", typeName(declaredType, true), name, renderExpr(v.Value)), ""
 		}
-		return fmt.Sprintf("static %s %s;\n", typeName(v.Type, false), name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
+		return fmt.Sprintf("static %s %s;\n", typeName(declaredType, false), name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
 	default:
 		return "", ""
 	}
+}
+
+func effectiveType(declaredType, resolvedType string) string {
+	if strings.TrimSpace(declaredType) != "" {
+		return declaredType
+	}
+	return resolvedType
 }
 
 func renderExprStmt(node *ast.ExprStmt, indent string) string {
@@ -360,10 +590,13 @@ func renderExpr(expr ast.Expr) string {
 		case "LOW":
 			return "0"
 		}
-		if mangled, ok := mangledIdentifiers[node.Name]; ok {
+		if node.Symbol == "" {
+			return node.Name
+		}
+		if mangled, ok := mangledIdentifiers[symbolKey(node.Symbol, node.Name)]; ok {
 			return mangled
 		}
-		return node.Name
+		return sanitizeBinding(node.Symbol, node.Name)
 	case *ast.NumberLiteral:
 		return node.Value
 	case *ast.StringLiteral:
@@ -463,6 +696,8 @@ func typeName(t string, constDecl bool) string {
 		return "int"
 	}
 	switch t {
+	case "void":
+		return "void"
 	case "uint8":
 		return "uint8_t"
 	case "uint16":
@@ -480,6 +715,9 @@ func typeName(t string, constDecl bool) string {
 	case "boolean":
 		return "bool"
 	case "string":
+		if constDecl {
+			return "char *"
+		}
 		return "const char *"
 	default:
 		if strings.HasPrefix(t, "jikascript_object_") {
@@ -604,7 +842,7 @@ func renderParams(params []string) string {
 	return strings.Join(list, ", ")
 }
 
-func renderTypedParams(params []string, types []string) string {
+func renderTypedParams(params []string, types []string, symbols []string) string {
 	if len(params) == 0 {
 		return "void"
 	}
@@ -614,7 +852,11 @@ func renderTypedParams(params []string, types []string) string {
 		if i < len(types) && types[i] != "" {
 			cType = types[i]
 		}
-		list = append(list, cType+" "+sanitizeName(param))
+		symbol := ""
+		if i < len(symbols) {
+			symbol = symbols[i]
+		}
+		list = append(list, cType+" "+sanitizeBinding(symbol, param))
 	}
 	return strings.Join(list, ", ")
 }
@@ -707,9 +949,9 @@ func renderForInit(stmt ast.Stmt) string {
 	}
 	switch node := stmt.(type) {
 	case *ast.VarDecl:
-		return typeName(node.Type, false) + " " + sanitizeName(node.Name) + " = " + renderExpr(node.Value)
+		return typeName(effectiveType(node.Type, node.ResolvedType), false) + " " + sanitizeBinding(node.Symbol, node.Name) + " = " + renderExpr(node.Value)
 	case *ast.ConstDecl:
-		return "const " + typeName(node.Type, true) + " " + sanitizeName(node.Name) + " = " + renderExpr(node.Value)
+		return "const " + typeName(effectiveType(node.Type, node.ResolvedType), true) + " " + sanitizeBinding(node.Symbol, node.Name) + " = " + renderExpr(node.Value)
 	case *ast.ExprStmt:
 		return renderExpr(node.Expr)
 	default:
@@ -1015,11 +1257,11 @@ func renderObjectType(meta objectMeta) string {
 	return b.String()
 }
 
-func renderObjectTopLevelDecl(meta objectMeta, name string, value ast.Expr) string {
+func renderObjectTopLevelDecl(meta objectMeta, name, symbol string, value ast.Expr) string {
 	if isStaticInitSafe(value) {
-		return fmt.Sprintf("static %s %s = %s;\n", meta.CName, sanitizeName(name), renderExpr(value))
+		return fmt.Sprintf("static %s %s = %s;\n", meta.CName, sanitizeBinding(symbol, name), renderExpr(value))
 	}
-	return fmt.Sprintf("static %s %s;\n", meta.CName, sanitizeName(name))
+	return fmt.Sprintf("static %s %s;\n", meta.CName, sanitizeBinding(symbol, name))
 }
 
 func collectFunctionTypes(program *ast.Program) {
@@ -1028,10 +1270,22 @@ func collectFunctionTypes(program *ast.Program) {
 		if !ok {
 			continue
 		}
+		sanitizeBinding(fn.Symbol, fn.Name)
 		meta := functionMeta{ParamTypes: make([]string, len(fn.Params))}
+		for i, paramType := range fn.ParamTypes {
+			meta.ParamTypes[i] = resolvedCType(paramType)
+		}
+		if fn.ReturnType != "" {
+			meta.ReturnType = resolvedCType(fn.ReturnType)
+		}
 		for _, bodyStmt := range fn.Body {
 			if ret, ok := bodyStmt.(*ast.ReturnStmt); ok {
-				if object, ok := objectDeclMeta(ret.Value); ok {
+				if meta.ReturnType == "" {
+					if object, ok := objectDeclMeta(ret.Value); ok {
+						meta.ReturnType = object.CName
+					}
+				}
+				if object, ok := objectDeclMeta(ret.Value); ok && meta.ReturnType == "" {
 					meta.ReturnType = object.CName
 				}
 			}
@@ -1064,6 +1318,16 @@ func collectFunctionTypes(program *ast.Program) {
 	for _, stmt := range program.Statements {
 		walkStmt(stmt, visit)
 	}
+}
+
+func resolvedCType(typ string) string {
+	if strings.Contains(typ, ":") {
+		if meta, ok := generatedObjects[typ]; ok {
+			return meta.CName
+		}
+		return "int"
+	}
+	return typeName(typ, false)
 }
 
 func collectObjectBindings(program *ast.Program) {

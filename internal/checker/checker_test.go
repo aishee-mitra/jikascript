@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"jikascript/internal/ast"
 	"jikascript/internal/parser"
 )
 
@@ -298,5 +299,31 @@ func TestCheckAllowsCompatibleNumericReturns(t *testing.T) {
 	}
 	if err := Check(program); err != nil {
 		t.Fatalf("unexpected checker error: %v", err)
+	}
+}
+
+func TestCheckResolvesForwardFunctionCallTypes(t *testing.T) {
+	program, err := parser.ParseProgram(`const result = add(1, 2);
+function add(a, b) { return a + b; }`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err != nil {
+		t.Fatalf("unexpected checker error: %v", err)
+	}
+	fn := program.Statements[1].(*ast.FunctionDecl)
+	if fn.ReturnType != "int32" || len(fn.ParamTypes) != 2 || fn.ParamTypes[0] != "int32" || fn.ParamTypes[1] != "int32" {
+		t.Fatalf("unexpected resolved function types: params=%v return=%q", fn.ParamTypes, fn.ReturnType)
+	}
+}
+
+func TestCheckRejectsIncompatibleFunctionArgument(t *testing.T) {
+	program, err := parser.ParseProgram(`function add(a, b) { return a + b; }
+const result = add(1, "wrong");`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "numeric operands") {
+		t.Fatalf("expected incompatible function argument error, got %v", err)
 	}
 }
