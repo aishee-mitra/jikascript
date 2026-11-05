@@ -15,7 +15,10 @@ func TestGenerateContainsMainAndTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	out := Generate(program)
+	out, genErr := Generate(program)
+	if genErr != nil {
+		t.Fatalf("generate error: %v", genErr)
+	}
 	if !strings.Contains(out, "periodic_init") {
 		t.Fatal("expected periodic_init in generated C")
 	}
@@ -38,7 +41,10 @@ scheduler.start();
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	out := Generate(program)
+	out, genErr := Generate(program)
+	if genErr != nil {
+		t.Fatalf("generate error: %v", genErr)
+	}
 	if !strings.Contains(out, "gpio_output(js_led);") {
 		t.Fatal("expected led.output() to map to gpio_output")
 	}
@@ -64,7 +70,10 @@ func TestGenerateSwitchAndStrictEquality(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	out := Generate(program)
+	out, genErr := Generate(program)
+	if genErr != nil {
+		t.Fatalf("generate error: %v", genErr)
+	}
 	if !strings.Contains(out, "switch (mode)") {
 		t.Fatal("expected switch statement in generated C")
 	}
@@ -85,7 +94,10 @@ readings[0] = latest;
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	out := Generate(program)
+	out, genErr := Generate(program)
+	if genErr != nil {
+		t.Fatalf("generate error: %v", genErr)
+	}
 	if !strings.Contains(out, "js_readings_push") || !strings.Contains(out, "js_readings_pop") {
 		t.Fatal("expected array helper functions for push/pop")
 	}
@@ -119,7 +131,10 @@ device.enabled = false;
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	out := Generate(program)
+	out, genErr := Generate(program)
+	if genErr != nil {
+		t.Fatalf("generate error: %v", genErr)
+	}
 	if !strings.Contains(out, "typedef struct {") || !strings.Contains(out, "const char * name;") || !strings.Contains(out, "int32_t pin;") || !strings.Contains(out, "bool enabled;") {
 		t.Fatalf("expected C record definition, got:\n%s", out)
 	}
@@ -138,7 +153,10 @@ const updated = setPin(device);`)
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	out := Generate(program)
+	out, genErr := Generate(program)
+	if genErr != nil {
+		t.Fatalf("generate error: %v", genErr)
+	}
 	if !strings.Contains(out, "static jikascript_object_1_t js_setPin(jikascript_object_1_t js_device)") {
 		t.Fatalf("expected object parameter and return type, got:\n%s", out)
 	}
@@ -152,7 +170,10 @@ func TestGenerateInferredArrayOfObjects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	out := Generate(program)
+	out, genErr := Generate(program)
+	if genErr != nil {
+		t.Fatalf("generate error: %v", genErr)
+	}
 	if !strings.Contains(out, "jikascript_object_1_t data[2]") || !strings.Contains(out, "js_devices.data[0] = (jikascript_object_1_t){ .pin = 1 };") {
 		t.Fatalf("expected statically allocated array of record values, got:\n%s", out)
 	}
@@ -163,7 +184,10 @@ func TestGenerateManglesMainBinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	out := Generate(program)
+	out, genErr := Generate(program)
+	if genErr != nil {
+		t.Fatalf("generate error: %v", genErr)
+	}
 	if strings.Contains(out, "int main = 1;") {
 		t.Fatalf("user binding should not collide with C main symbol, got:\n%s", out)
 	}
@@ -177,8 +201,22 @@ func TestGenerateMapsHighLowConstants(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	out := Generate(program)
+	out, genErr := Generate(program)
+	if genErr != nil {
+		t.Fatalf("generate error: %v", genErr)
+	}
 	if !strings.Contains(out, "gpio_write(js_led, 1);") || !strings.Contains(out, "gpio_write(js_led, 0);") {
 		t.Fatalf("expected HIGH/LOW constants to map to C integer values, got:\n%s", out)
+	}
+}
+
+func TestGenerateRejectsUnsupportedArrayLiteralExpression(t *testing.T) {
+	program, err := parser.ParseProgram(`let value = 1; value = [1, 2];`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	_, genErr := Generate(program)
+	if genErr == nil || !strings.Contains(genErr.Error(), "array literal expression is not supported") {
+		t.Fatalf("expected explicit codegen error for unsupported array literal expression, got %v", genErr)
 	}
 }

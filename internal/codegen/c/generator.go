@@ -21,6 +21,7 @@ var generatedFunctions map[string]functionMeta
 var generatedObjectBindings map[string]string
 var mangledIdentifiers map[string]string
 var usedCIdentifiers map[string]string
+var generationErr error
 
 type objectMeta struct {
 	Shape  string
@@ -34,7 +35,7 @@ type functionMeta struct {
 }
 
 // Generate emits readable C99-like output for the initial JikaScript subset.
-func Generate(program *ast.Program) string {
+func Generate(program *ast.Program) (string, error) {
 	var b strings.Builder
 	generatedArrays = map[string]arrayMeta{}
 	generatedObjects = map[string]objectMeta{}
@@ -42,6 +43,7 @@ func Generate(program *ast.Program) string {
 	generatedObjectBindings = map[string]string{}
 	mangledIdentifiers = map[string]string{}
 	usedCIdentifiers = map[string]string{}
+	generationErr = nil
 	collectObjectTypes(program)
 	collectObjectBindings(program)
 	collectFunctionTypes(program)
@@ -116,6 +118,9 @@ func Generate(program *ast.Program) string {
 		default:
 			mainStmts = append(mainStmts, renderStmt(node, "    "))
 		}
+		if generationErr != nil {
+			return "", generationErr
+		}
 	}
 
 	if len(arrayDecls) > 0 {
@@ -143,7 +148,10 @@ func Generate(program *ast.Program) string {
 		b.WriteString(stmt)
 	}
 	b.WriteString("    while (1) {\n        periodic_run();\n    }\n    return 0;\n}\n")
-	return b.String()
+	if generationErr != nil {
+		return "", generationErr
+	}
+	return b.String(), nil
 }
 
 func sortedObjectMetas() []objectMeta {
@@ -338,7 +346,8 @@ func renderStmt(stmt ast.Stmt, indent string) string {
 		}
 		return b.String()
 	default:
-		return indent + "/* unsupported statement */\n"
+		setGenerationErrorf("unsupported statement %T in code generation", node)
+		return ""
 	}
 }
 
@@ -395,7 +404,8 @@ func renderExpr(expr ast.Expr) string {
 				return sanitizeName(meta.Name) + "_get((int32_t)(" + renderExpr(node.Index) + "))"
 			}
 		}
-		return "0"
+		setGenerationErrorf("unsupported indexed expression target in code generation")
+		return ""
 	case *ast.BinaryExpr:
 		if isAssignmentOp(node.Op) {
 			if idx, ok := node.Left.(*ast.IndexExpr); ok {
@@ -421,7 +431,8 @@ func renderExpr(expr ast.Expr) string {
 	case *ast.UnaryExpr:
 		return node.Op + renderExpr(node.Expr)
 	case *ast.ArrayLiteralExpr:
-		return "/* array literal */"
+		setGenerationErrorf("array literal expression is not supported in this context")
+		return ""
 	case *ast.ObjectLiteralExpr:
 		parts := make([]string, 0, len(node.Properties))
 		for _, property := range node.Properties {
@@ -432,10 +443,19 @@ func renderExpr(expr ast.Expr) string {
 		}
 		return "{ " + strings.Join(parts, ", ") + " }"
 	case *ast.ArrowFunctionExpr:
-		return "/* arrow function */"
+		setGenerationErrorf("arrow function expression is not supported in this context")
+		return ""
 	default:
-		return "0"
+		setGenerationErrorf("unsupported expression %T in code generation", node)
+		return ""
 	}
+}
+
+func setGenerationErrorf(format string, args ...interface{}) {
+	if generationErr != nil {
+		return
+	}
+	generationErr = fmt.Errorf(format, args...)
 }
 
 func typeName(t string, constDecl bool) string {

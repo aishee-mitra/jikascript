@@ -99,7 +99,10 @@ func runTranspile(args []string) error {
 	if err := checker.Check(program); err != nil {
 		return fmt.Errorf("%s: %w", opts.input, err)
 	}
-	output := cgen.Generate(program)
+	output, err := cgen.Generate(program)
+	if err != nil {
+		return fmt.Errorf("%s: %w", opts.input, err)
+	}
 	if opts.output == "" {
 		fmt.Print(output)
 		return nil
