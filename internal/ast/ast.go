@@ -82,6 +82,35 @@ type IfStmt struct {
 
 func (*IfStmt) stmtNode() {}
 
+// WhileStmt describes a while loop.
+type WhileStmt struct {
+	Cond Expr
+	Body []Stmt
+	Pos  Position
+}
+
+func (*WhileStmt) stmtNode() {}
+
+// DoWhileStmt describes a do-while loop.
+type DoWhileStmt struct {
+	Body []Stmt
+	Cond Expr
+	Pos  Position
+}
+
+func (*DoWhileStmt) stmtNode() {}
+
+// ForStmt describes a for loop.
+type ForStmt struct {
+	Init Stmt
+	Cond Expr
+	Post Expr
+	Body []Stmt
+	Pos  Position
+}
+
+func (*ForStmt) stmtNode() {}
+
 // TaskDecl describes the periodic task syntax.
 type TaskDecl struct {
 	Name     string

@@ -35,6 +35,7 @@ var Keywords = map[string]TokenType{
 	"if":        KEYWORD,
 	"else":      KEYWORD,
 	"while":     KEYWORD,
+	"do":        KEYWORD,
 	"for":       KEYWORD,
 	"break":     KEYWORD,
 	"continue":  KEYWORD,
