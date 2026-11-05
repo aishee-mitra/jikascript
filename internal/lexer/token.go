@@ -37,6 +37,9 @@ var Keywords = map[string]TokenType{
 	"while":     KEYWORD,
 	"do":        KEYWORD,
 	"for":       KEYWORD,
+	"switch":    KEYWORD,
+	"case":      KEYWORD,
+	"default":   KEYWORD,
 	"break":     KEYWORD,
 	"continue":  KEYWORD,
 	"true":      BOOL,
@@ -73,4 +76,6 @@ var SingleCharOperators = map[byte]string{
 	'>': ">",
 	'&': "&",
 	'|': "|",
+	'^': "^",
+	'~': "~",
 }

@@ -58,3 +58,20 @@ scheduler.start();
 		t.Fatal("expected runtime initialization assignment for pin binding")
 	}
 }
+
+func TestGenerateSwitchAndStrictEquality(t *testing.T) {
+	program, err := parser.ParseProgram(`switch (mode) { case 1: break; default: break; } if (a === b) { flag = 1; }`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	out := Generate(program)
+	if !strings.Contains(out, "switch (mode)") {
+		t.Fatal("expected switch statement in generated C")
+	}
+	if !strings.Contains(out, "case 1:") || !strings.Contains(out, "default:") {
+		t.Fatal("expected switch cases in generated C")
+	}
+	if strings.Contains(out, "===") {
+		t.Fatal("strict equality should be emitted as C equality operator")
+	}
+}

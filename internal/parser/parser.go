@@ -77,6 +77,12 @@ func (p *Parser) parseStatement() (ast.Stmt, error) {
 		return p.parseDoWhileStmt()
 	case tok.Type == lexer.KEYWORD && tok.Literal == "for":
 		return p.parseForStmt()
+	case tok.Type == lexer.KEYWORD && tok.Literal == "switch":
+		return p.parseSwitchStmt()
+	case tok.Type == lexer.KEYWORD && tok.Literal == "break":
+		return p.parseBreakStmt()
+	case tok.Type == lexer.KEYWORD && tok.Literal == "continue":
+		return p.parseContinueStmt()
 	case tok.Type == lexer.KEYWORD && tok.Literal == "task":
 		return p.parseTaskDecl()
 	case tok.Type == lexer.KEYWORD && tok.Literal == "scheduler":
@@ -182,6 +188,83 @@ func (p *Parser) parseForStmt() (ast.Stmt, error) {
 		return nil, err
 	}
 	return &ast.ForStmt{Init: init, Cond: cond, Post: post, Body: body, Pos: pos}, nil
+}
+
+func (p *Parser) parseSwitchStmt() (ast.Stmt, error) {
+	pos := ast.Position{Line: p.cur.Line, Column: p.cur.Column}
+	p.next() // switch
+	if p.cur.Type != lexer.PUNCT || p.cur.Literal != "(" {
+		return nil, fmt.Errorf("line %d:%d: expected '(' after switch", p.cur.Line, p.cur.Column)
+	}
+	p.next()
+	expr, err := p.parseExpression()
+	if err != nil {
+		return nil, err
+	}
+	if p.cur.Type != lexer.PUNCT || p.cur.Literal != ")" {
+		return nil, fmt.Errorf("line %d:%d: expected ')' after switch expression", p.cur.Line, p.cur.Column)
+	}
+	p.next()
+	if p.cur.Type != lexer.PUNCT || p.cur.Literal != "{" {
+		return nil, fmt.Errorf("line %d:%d: expected '{' after switch", p.cur.Line, p.cur.Column)
+	}
+	p.next()
+
+	cases := []ast.SwitchCase{}
+	for !(p.cur.Type == lexer.PUNCT && p.cur.Literal == "}") && !p.isEOF() {
+		casePos := ast.Position{Line: p.cur.Line, Column: p.cur.Column}
+		var caseExpr ast.Expr
+		switch {
+		case p.cur.Type == lexer.KEYWORD && p.cur.Literal == "case":
+			p.next()
+			var err error
+			caseExpr, err = p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+		case p.cur.Type == lexer.KEYWORD && p.cur.Literal == "default":
+			p.next()
+		default:
+			return nil, fmt.Errorf("line %d:%d: expected 'case' or 'default' in switch", p.cur.Line, p.cur.Column)
+		}
+		if p.cur.Type != lexer.PUNCT || p.cur.Literal != ":" {
+			return nil, fmt.Errorf("line %d:%d: expected ':' in switch case", p.cur.Line, p.cur.Column)
+		}
+		p.next()
+
+		body := []ast.Stmt{}
+		for !(p.cur.Type == lexer.KEYWORD && (p.cur.Literal == "case" || p.cur.Literal == "default")) &&
+			!(p.cur.Type == lexer.PUNCT && p.cur.Literal == "}") &&
+			!p.isEOF() {
+			stmt, err := p.parseStatement()
+			if err != nil {
+				return nil, err
+			}
+			if stmt != nil {
+				body = append(body, stmt)
+			}
+			p.consumeSemicolonIfPresent()
+		}
+
+		cases = append(cases, ast.SwitchCase{Value: caseExpr, Body: body, Pos: casePos})
+	}
+	if p.cur.Type != lexer.PUNCT || p.cur.Literal != "}" {
+		return nil, fmt.Errorf("line %d:%d: expected '}' after switch", p.cur.Line, p.cur.Column)
+	}
+	p.next()
+	return &ast.SwitchStmt{Expr: expr, Cases: cases, Pos: pos}, nil
+}
+
+func (p *Parser) parseBreakStmt() (ast.Stmt, error) {
+	pos := ast.Position{Line: p.cur.Line, Column: p.cur.Column}
+	p.next()
+	return &ast.BreakStmt{Pos: pos}, nil
+}
+
+func (p *Parser) parseContinueStmt() (ast.Stmt, error) {
+	pos := ast.Position{Line: p.cur.Line, Column: p.cur.Column}
+	p.next()
+	return &ast.ContinueStmt{Pos: pos}, nil
 }
 
 func (p *Parser) parseVarDecl(constDecl bool) (ast.Stmt, error) {
@@ -451,19 +534,19 @@ func (p *Parser) parseBlock() ([]ast.Stmt, error) {
 }
 
 func (p *Parser) parseExpression() (ast.Expr, error) {
-	return p.parseBinaryOrAssignment()
+	return p.parseAssignment()
 }
 
-func (p *Parser) parseBinaryOrAssignment() (ast.Expr, error) {
-	left, err := p.parseComparison()
+func (p *Parser) parseAssignment() (ast.Expr, error) {
+	left, err := p.parseLogicalOr()
 	if err != nil {
 		return nil, err
 	}
-	if p.cur.Type == lexer.OPERATOR && (p.cur.Literal == "=" || p.cur.Literal == "+=" || p.cur.Literal == "-=" || p.cur.Literal == "*=" || p.cur.Literal == "/=") {
+	if p.cur.Type == lexer.OPERATOR && isAssignmentOperator(p.cur.Literal) {
 		start := ast.Position{Line: p.cur.Line, Column: p.cur.Column}
 		op := p.cur.Literal
 		p.next()
-		right, err := p.parseBinaryOrAssignment()
+		right, err := p.parseAssignment()
 		if err != nil {
 			return nil, err
 		}
@@ -472,59 +555,66 @@ func (p *Parser) parseBinaryOrAssignment() (ast.Expr, error) {
 	return left, nil
 }
 
-func (p *Parser) parseComparison() (ast.Expr, error) {
-	left, err := p.parseAdditive()
-	if err != nil {
-		return nil, err
-	}
-	for p.cur.Type == lexer.OPERATOR && (p.cur.Literal == "==" || p.cur.Literal == "!=" || p.cur.Literal == "<" || p.cur.Literal == "<=" || p.cur.Literal == ">" || p.cur.Literal == ">=" || p.cur.Literal == "&&" || p.cur.Literal == "||") {
-		op := p.cur.Literal
-		p.next()
-		right, err := p.parseAdditive()
-		if err != nil {
-			return nil, err
-		}
-		left = &ast.BinaryExpr{Left: left, Op: op, Right: right, Pos: ast.Position{Line: p.cur.Line, Column: p.cur.Column}}
-	}
-	return left, nil
+func (p *Parser) parseLogicalOr() (ast.Expr, error) {
+	return p.parseBinaryLeftAssoc(p.parseLogicalAnd, []string{"||"})
+}
+
+func (p *Parser) parseLogicalAnd() (ast.Expr, error) {
+	return p.parseBinaryLeftAssoc(p.parseBitwiseOr, []string{"&&"})
+}
+
+func (p *Parser) parseBitwiseOr() (ast.Expr, error) {
+	return p.parseBinaryLeftAssoc(p.parseBitwiseXor, []string{"|"})
+}
+
+func (p *Parser) parseBitwiseXor() (ast.Expr, error) {
+	return p.parseBinaryLeftAssoc(p.parseBitwiseAnd, []string{"^"})
+}
+
+func (p *Parser) parseBitwiseAnd() (ast.Expr, error) {
+	return p.parseBinaryLeftAssoc(p.parseEquality, []string{"&"})
+}
+
+func (p *Parser) parseEquality() (ast.Expr, error) {
+	return p.parseBinaryLeftAssoc(p.parseRelational, []string{"==", "!=", "===", "!=="})
+}
+
+func (p *Parser) parseRelational() (ast.Expr, error) {
+	return p.parseBinaryLeftAssoc(p.parseShift, []string{"<", "<=", ">", ">="})
+}
+
+func (p *Parser) parseShift() (ast.Expr, error) {
+	return p.parseBinaryLeftAssoc(p.parseAdditive, []string{"<<", ">>"})
 }
 
 func (p *Parser) parseAdditive() (ast.Expr, error) {
-	left, err := p.parseMultiplicative()
-	if err != nil {
-		return nil, err
-	}
-	for p.cur.Type == lexer.OPERATOR && (p.cur.Literal == "+" || p.cur.Literal == "-") {
-		op := p.cur.Literal
-		p.next()
-		right, err := p.parseMultiplicative()
-		if err != nil {
-			return nil, err
-		}
-		left = &ast.BinaryExpr{Left: left, Op: op, Right: right, Pos: ast.Position{Line: p.cur.Line, Column: p.cur.Column}}
-	}
-	return left, nil
+	return p.parseBinaryLeftAssoc(p.parseMultiplicative, []string{"+", "-"})
 }
 
 func (p *Parser) parseMultiplicative() (ast.Expr, error) {
-	left, err := p.parseUnary()
+	return p.parseBinaryLeftAssoc(p.parseUnary, []string{"*", "/", "%"})
+}
+
+func (p *Parser) parseBinaryLeftAssoc(next func() (ast.Expr, error), ops []string) (ast.Expr, error) {
+	left, err := next()
 	if err != nil {
 		return nil, err
 	}
-	for p.cur.Type == lexer.OPERATOR && (p.cur.Literal == "*" || p.cur.Literal == "/" || p.cur.Literal == "%") {
+	for p.cur.Type == lexer.OPERATOR && containsOperator(ops, p.cur.Literal) {
 		op := p.cur.Literal
+		pos := ast.Position{Line: p.cur.Line, Column: p.cur.Column}
 		p.next()
-		right, err := p.parseUnary()
+		right, err := next()
 		if err != nil {
 			return nil, err
 		}
-		left = &ast.BinaryExpr{Left: left, Op: op, Right: right, Pos: ast.Position{Line: p.cur.Line, Column: p.cur.Column}}
+		left = &ast.BinaryExpr{Left: left, Op: op, Right: right, Pos: pos}
 	}
 	return left, nil
 }
 
 func (p *Parser) parseUnary() (ast.Expr, error) {
-	if p.cur.Type == lexer.OPERATOR && (p.cur.Literal == "!" || p.cur.Literal == "+" || p.cur.Literal == "-" || p.cur.Literal == "++" || p.cur.Literal == "--") {
+	if p.cur.Type == lexer.OPERATOR && (p.cur.Literal == "!" || p.cur.Literal == "+" || p.cur.Literal == "-" || p.cur.Literal == "++" || p.cur.Literal == "--" || p.cur.Literal == "~") {
 		op := p.cur.Literal
 		p.next()
 		right, err := p.parseUnary()
@@ -554,12 +644,11 @@ func (p *Parser) parsePrimary() (ast.Expr, error) {
 		lit := &ast.StringLiteral{Value: p.cur.Literal, Pos: ast.Position{Line: p.cur.Line, Column: p.cur.Column}}
 		p.next()
 		return lit, nil
+	case lexer.BOOL:
+		lit := &ast.BoolLiteral{Value: p.cur.Literal == "true", Pos: ast.Position{Line: p.cur.Line, Column: p.cur.Column}}
+		p.next()
+		return lit, nil
 	case lexer.KEYWORD:
-		if p.cur.Literal == "true" || p.cur.Literal == "false" {
-			lit := &ast.BoolLiteral{Value: p.cur.Literal == "true", Pos: ast.Position{Line: p.cur.Line, Column: p.cur.Column}}
-			p.next()
-			return lit, nil
-		}
 		if p.cur.Literal == "pin" || p.cur.Literal == "scheduler" || p.cur.Literal == "start" {
 			ident := &ast.Identifier{Name: p.cur.Literal, Pos: ast.Position{Line: p.cur.Line, Column: p.cur.Column}}
 			p.next()
@@ -641,6 +730,24 @@ func (p *Parser) next() {
 		return
 	}
 	p.cur = lexer.Token{Type: lexer.EOF, Literal: "", Line: p.cur.Line, Column: p.cur.Column}
+}
+
+func containsOperator(ops []string, op string) bool {
+	for _, candidate := range ops {
+		if candidate == op {
+			return true
+		}
+	}
+	return false
+}
+
+func isAssignmentOperator(op string) bool {
+	switch op {
+	case "=", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<=", ">>=":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) DebugString() string {

@@ -42,3 +42,21 @@ do { count = count - 1; } while (count > 0);
 		t.Fatalf("expected 3 loop statements, got %d", len(program.Statements))
 	}
 }
+
+func TestParseSwitchBreakContinueAndBitwise(t *testing.T) {
+	program, err := ParseProgram(`switch (mode) {
+case 1:
+  flags = flags | 1;
+  break;
+default:
+  while (x < 10) { x += 1; continue; }
+}
+if ((a << 1) === (b ^ 2)) { c &= 3; }
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(program.Statements) != 2 {
+		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
+	}
+}

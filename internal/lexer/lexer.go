@@ -64,7 +64,7 @@ func (l *Lexer) NextToken() Token {
 			return Token{Type: PUNCT, Literal: punct, Line: startLine, Column: startColumn}
 		}
 
-		if op, ok := l.readDoubleOperator(); ok {
+		if op, ok := l.readOperator(); ok {
 			startLine, startColumn := l.line, l.column
 			return Token{Type: OPERATOR, Literal: op, Line: startLine, Column: startColumn}
 		}
@@ -189,13 +189,25 @@ func (l *Lexer) consumeMultiLineComment() {
 	panic(fmt.Sprintf("unterminated comment at line %d, column %d", l.line, l.column))
 }
 
-func (l *Lexer) readDoubleOperator() (string, bool) {
+func (l *Lexer) readOperator() (string, bool) {
+	if l.pos+2 < len(l.source) {
+		triple := string([]rune{l.source[l.pos], l.source[l.pos+1], l.source[l.pos+2]})
+		switch triple {
+		case "===", "!==", "<<=", ">>=":
+			l.advance()
+			l.advance()
+			l.advance()
+			return triple, true
+		}
+	}
+
 	if l.pos+1 >= len(l.source) {
 		return "", false
 	}
+
 	pair := string([]rune{l.source[l.pos], l.source[l.pos+1]})
 	switch pair {
-	case "==", "!=", "<=", ">=", "&&", "||", "++", "--", "=>":
+	case "==", "!=", "<=", ">=", "&&", "||", "++", "--", "=>", "+=", "-=", "*=", "/=", "%=", "&=", "|=", "^=", "<<", ">>":
 		l.advance()
 		l.advance()
 		return pair, true

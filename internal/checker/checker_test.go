@@ -62,3 +62,33 @@ func TestCheckRejectsDuplicateTaskNames(t *testing.T) {
 		t.Fatalf("expected duplicate task error, got %v", err)
 	}
 }
+
+func TestCheckRejectsBreakOutsideLoopOrSwitch(t *testing.T) {
+	program, err := parser.ParseProgram(`break;`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "break is only valid") {
+		t.Fatalf("expected invalid break error, got %v", err)
+	}
+}
+
+func TestCheckRejectsContinueOutsideLoop(t *testing.T) {
+	program, err := parser.ParseProgram(`continue;`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "continue is only valid") {
+		t.Fatalf("expected invalid continue error, got %v", err)
+	}
+}
+
+func TestCheckAllowsSwitchAndLoopFlowControl(t *testing.T) {
+	program, err := parser.ParseProgram(`let mode = 1; let x = 0; switch (mode) { case 1: break; default: while (x < 2) { continue; } }`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err != nil {
+		t.Fatalf("unexpected checker error: %v", err)
+	}
+}

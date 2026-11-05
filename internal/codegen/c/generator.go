@@ -45,6 +45,8 @@ func Generate(program *ast.Program) string {
 			}
 		case *ast.ExprStmt:
 			startupStmts = append(startupStmts, renderExprStmt(node, "    "))
+		default:
+			startupStmts = append(startupStmts, renderStmt(node, "    "))
 		}
 	}
 
@@ -175,6 +177,25 @@ func renderStmt(stmt ast.Stmt, indent string) string {
 		}
 		b.WriteString(indent + "}\n")
 		return b.String()
+	case *ast.SwitchStmt:
+		var b strings.Builder
+		b.WriteString(indent + "switch (" + renderExpr(node.Expr) + ") {\n")
+		for _, c := range node.Cases {
+			if c.Value == nil {
+				b.WriteString(indent + "default:\n")
+			} else {
+				b.WriteString(indent + "case " + renderExpr(c.Value) + ":\n")
+			}
+			for _, inner := range c.Body {
+				b.WriteString(renderStmt(inner, indent+"    "))
+			}
+		}
+		b.WriteString(indent + "}\n")
+		return b.String()
+	case *ast.BreakStmt:
+		return indent + "break;\n"
+	case *ast.ContinueStmt:
+		return indent + "continue;\n"
 	case *ast.VarDecl:
 		return renderVarDecl(node, false)
 	case *ast.ConstDecl:
@@ -219,7 +240,13 @@ func renderExpr(expr ast.Expr) string {
 	case *ast.SelectorExpr:
 		return renderExpr(node.Object) + "." + node.Field
 	case *ast.BinaryExpr:
-		return renderExpr(node.Left) + " " + node.Op + " " + renderExpr(node.Right)
+		op := node.Op
+		if op == "===" {
+			op = "=="
+		} else if op == "!==" {
+			op = "!="
+		}
+		return renderExpr(node.Left) + " " + op + " " + renderExpr(node.Right)
 	case *ast.UnaryExpr:
 		return node.Op + renderExpr(node.Expr)
 	case *ast.ArrowFunctionExpr:

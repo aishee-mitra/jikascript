@@ -111,6 +111,36 @@ type ForStmt struct {
 
 func (*ForStmt) stmtNode() {}
 
+// SwitchCase represents one case/default arm within a switch statement.
+type SwitchCase struct {
+	Value Expr
+	Body  []Stmt
+	Pos   Position
+}
+
+// SwitchStmt describes a switch statement.
+type SwitchStmt struct {
+	Expr  Expr
+	Cases []SwitchCase
+	Pos   Position
+}
+
+func (*SwitchStmt) stmtNode() {}
+
+// BreakStmt describes `break`.
+type BreakStmt struct {
+	Pos Position
+}
+
+func (*BreakStmt) stmtNode() {}
+
+// ContinueStmt describes `continue`.
+type ContinueStmt struct {
+	Pos Position
+}
+
+func (*ContinueStmt) stmtNode() {}
+
 // TaskDecl describes the periodic task syntax.
 type TaskDecl struct {
 	Name     string
