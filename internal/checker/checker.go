@@ -183,11 +183,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 			return fmt.Errorf("line %d:%d: continue is only valid inside loops", node.Pos.Line, node.Pos.Column)
 		}
 	case *ast.BlockStmt:
-		for _, s := range node.Statements {
-			if err := checkStmt(s, scopeStack, taskNames, loopDepth, switchDepth, functionReturns); err != nil {
-				return err
-			}
-		}
+		return checkBlock(node.Statements, scopeStack, taskNames, loopDepth, switchDepth, functionReturns)
 	case *ast.ReturnStmt:
 		if node.Value != nil {
 			return checkExpr(node.Value, scopeStack)
@@ -386,8 +382,11 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 		for _, param := range node.Params {
 			callbackScope[param] = "arrow-param"
 		}
+		stack := make([]map[string]string, 0, len(scopeStack)+1)
+		stack = append(stack, scopeStack...)
+		stack = append(stack, callbackScope)
 		for _, s := range node.Body {
-			if err := checkStmt(s, append(scopeStack, callbackScope), map[string]struct{}{}, 0, 0, map[string]string{}); err != nil {
+			if err := checkStmt(s, stack, map[string]struct{}{}, 0, 0, map[string]string{}); err != nil {
 				return err
 			}
 		}
@@ -674,7 +673,7 @@ func isNumericType(t string) bool {
 
 func builtin(name string) bool {
 	switch name {
-	case "pin", "scheduler", "start", "output", "input", "toggle", "read", "write":
+	case "pin", "scheduler", "HIGH", "LOW":
 		return true
 	default:
 		return false
