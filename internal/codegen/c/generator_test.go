@@ -48,4 +48,13 @@ scheduler.start();
 	if strings.Contains(out, "scheduler.start();") {
 		t.Fatal("scheduler.start() should not be emitted as C selector syntax")
 	}
+	if strings.Contains(out, "static const int led = pin(\"PC1\");") {
+		t.Fatal("pin() top-level const init should not be emitted as non-C99 static initializer")
+	}
+	if !strings.Contains(out, "static int led;") {
+		t.Fatal("expected deferred top-level declaration for runtime pin initialization")
+	}
+	if !strings.Contains(out, "led = pin(\"PC1\");") {
+		t.Fatal("expected runtime initialization assignment for pin binding")
+	}
 }

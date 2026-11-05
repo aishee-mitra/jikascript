@@ -18,6 +18,7 @@ func Generate(program *ast.Program) string {
 
 	taskHandlers := []taskRegistration{}
 	startupStmts := []string{}
+	declInitStmts := []string{}
 	for _, stmt := range program.Statements {
 		switch node := stmt.(type) {
 		case *ast.FunctionDecl:
@@ -31,9 +32,17 @@ func Generate(program *ast.Program) string {
 			b.WriteString("}\n\n")
 			taskHandlers = append(taskHandlers, taskRegistration{name: taskName, interval: renderExpr(node.Interval)})
 		case *ast.VarDecl:
-			b.WriteString(renderVarDecl(node, false))
+			decl, init := renderTopLevelDecl(node, false)
+			b.WriteString(decl)
+			if init != "" {
+				declInitStmts = append(declInitStmts, "    "+init+";\n")
+			}
 		case *ast.ConstDecl:
-			b.WriteString(renderVarDecl(node, true))
+			decl, init := renderTopLevelDecl(node, true)
+			b.WriteString(decl)
+			if init != "" {
+				declInitStmts = append(declInitStmts, "    "+init+";\n")
+			}
 		case *ast.ExprStmt:
 			startupStmts = append(startupStmts, renderExprStmt(node, "    "))
 		}
@@ -48,6 +57,9 @@ func Generate(program *ast.Program) string {
 
 	b.WriteString("int main(void) {\n")
 	b.WriteString("    periodic_init();\n")
+	for _, stmt := range declInitStmts {
+		b.WriteString(stmt)
+	}
 	for _, task := range taskHandlers {
 		b.WriteString(fmt.Sprintf("    periodic_task_add(&%s_task, %s, %s);\n", task.name, task.name, task.interval))
 	}
@@ -85,6 +97,25 @@ func renderVarDecl(node interface{}, isConst bool) string {
 		return strings.Replace(decl, "static int ", "static const int ", 1)
 	}
 	return decl
+}
+
+func renderTopLevelDecl(node interface{}, isConst bool) (string, string) {
+	switch v := node.(type) {
+	case *ast.VarDecl:
+		name := sanitizeName(v.Name)
+		if isStaticInitSafe(v.Value) {
+			return renderVarDecl(v, false), ""
+		}
+		return fmt.Sprintf("static %s %s;\n", typeName(v.Type, false), name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
+	case *ast.ConstDecl:
+		name := sanitizeName(v.Name)
+		if isStaticInitSafe(v.Value) {
+			return renderVarDecl(v, true), ""
+		}
+		return fmt.Sprintf("static %s %s;\n", typeName(v.Type, false), name), fmt.Sprintf("%s = %s", name, renderExpr(v.Value))
+	default:
+		return "", ""
+	}
 }
 
 func renderExprStmt(node *ast.ExprStmt, indent string) string {
@@ -250,6 +281,19 @@ func renderParams(params []string) string {
 		list = append(list, "int "+sanitizeName(p))
 	}
 	return strings.Join(list, ", ")
+}
+
+func isStaticInitSafe(expr ast.Expr) bool {
+	switch node := expr.(type) {
+	case *ast.NumberLiteral, *ast.StringLiteral, *ast.BoolLiteral:
+		return true
+	case *ast.UnaryExpr:
+		return isStaticInitSafe(node.Expr)
+	case *ast.BinaryExpr:
+		return isStaticInitSafe(node.Left) && isStaticInitSafe(node.Right)
+	default:
+		return false
+	}
 }
 
 func taskHandlerName(taskName string) string {
