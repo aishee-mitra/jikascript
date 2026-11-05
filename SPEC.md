@@ -562,6 +562,7 @@ Header:
 #include <stdbool.h>
 
 typedef void (*periodic_callback_t)(void);
+typedef void (*periodic_critical_section_fn)(void);
 
 typedef struct {
     periodic_callback_t callback;
@@ -581,6 +582,11 @@ bool periodic_task_add(
 void periodic_run(void);
 
 uint32_t periodic_millis(void);
+void periodic_tick_ms(uint32_t elapsed_ms);
+void periodic_set_critical_section(
+    periodic_critical_section_fn enter_fn,
+    periodic_critical_section_fn exit_fn
+);
 
 #endif
 ```
@@ -623,9 +629,12 @@ The API above is provisional until checked against the original scheduler implem
 - Keep interrupt handlers short.
 - Do not execute application callbacks inside interrupt context.
 - Ensure timer state is accessed safely between interrupt and main contexts.
+- Do not advance time inside `periodic_run()`.
+- Advance scheduler time from a platform timer source (typically ISR-driven) via `periodic_tick_ms(...)`.
 - Define behavior for invalid intervals.
 - Define task registration failure behavior.
 - Define task removal and reconfiguration behavior if supported.
+- Missed-period policy: when multiple intervals elapse between scheduler runs, execute at most one callback per `periodic_run()` and advance the task deadline to the latest elapsed interval boundary (skip catch-up bursts).
 
 The initial implementation does not need advanced scheduling policies.
 
@@ -991,6 +1000,7 @@ Potential options:
 jikascript build blink.jika --target ch32v003
 jikascript build blink.jika --optimize size
 jikascript build blink.jika --optimize speed
+jikascript build blink.jika -o dist/blink.elf
 jikascript transpile blink.jika --target ch32v003
 ```
 

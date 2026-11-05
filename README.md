@@ -36,7 +36,7 @@ go build ./cmd/jikascript
 ```text
 jikascript check <input.jika>
 jikascript transpile <input.jika> [-o output.c] [--target ch32v003]
-jikascript build <input.jika> [--target ch32v003] [--optimize size|speed]
+jikascript build <input.jika> [-o output-prefix] [--target ch32v003] [--optimize size|speed]
 ```
 
 ### check
@@ -74,6 +74,12 @@ Then build:
 
 ```bash
 jikascript build examples/blink.jika --target ch32v003 --optimize size
+```
+
+Optional custom artifact prefix:
+
+```bash
+jikascript build examples/blink.jika -o dist/blink.elf
 ```
 
 Artifacts:
@@ -122,5 +128,20 @@ object arguments and returned object literals are statically resolvable.
 
 ```bash
 go test ./...
-gcc -std=c99 -Wall -Wextra runtime/periodic/test_periodic.c -o /tmp/periodic_test && /tmp/periodic_test
+gcc -std=c99 -Wall -Wextra runtime/periodic/test_periodic.c runtime/periodic/periodic.c -I runtime/periodic -o /tmp/periodic_test && /tmp/periodic_test
+```
+
+## Scheduler time source integration
+
+The portable scheduler no longer advances time inside `periodic_run()`.
+A platform timer (typically ISR-driven) must advance the scheduler clock via:
+
+```c
+periodic_tick_ms(elapsed_ms);
+```
+
+For interrupt/main-context synchronization, platforms may register critical-section hooks:
+
+```c
+periodic_set_critical_section(enter_fn, exit_fn);
 ```
