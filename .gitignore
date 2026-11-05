@@ -1,0 +1,25 @@
+# Go build artifacts
+bin/
+*.test
+*.out
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build outputs
+build/
+
+# C build/test artifacts
+*.o
+*.a
+*.obj
+
+# Coverage and profiling
+coverage.out
+*.prof
+
+# Editors/OS
+.DS_Store
+.vscode/
+.idea/

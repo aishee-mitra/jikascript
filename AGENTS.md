@@ -229,5 +229,18 @@ Do not start by generating the entire project or implementing every feature.
   ├── runtime/
   └── examples/
 ```
+
+## 14. Git Version Control
+
+Use disciplined and focused git practices during implementation.
+
+- Keep commits focused by milestone or tightly related change set.
+- Use Conventional Commit/Commitizen-style commit messages.
+- Do not mix unrelated changes in a single commit.
+- Do not rewrite history (`rebase`, `reset --hard`, `push --force`) unless explicitly requested.
+- Do not revert user changes unless explicitly requested.
+- Check `git status` before and after edits.
+- Include a short verification summary with each commit-ready milestone.
+
 ---
 **Guiding principle: Follow the specification, make the smallest correct change, test it, and keep the architecture simple.**
