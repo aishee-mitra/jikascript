@@ -2,6 +2,7 @@ package checker
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"jikascript/internal/ast"
@@ -27,7 +28,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		if _, ok := current[node.Name]; ok {
 			return fmt.Errorf("line %d:%d: variable '%s' already declared in this scope", node.Pos.Line, node.Pos.Column, node.Name)
 		}
-		bindingKind, err := classifyBinding("var", node.Value)
+		bindingKind, err := classifyBinding("var", node.Type, node.ArrayCapacity, node.Value)
 		if err != nil {
 			return fmt.Errorf("line %d:%d: %w", node.Pos.Line, node.Pos.Column, err)
 		}
@@ -41,7 +42,7 @@ func checkStmt(stmt ast.Stmt, scopeStack []map[string]string, taskNames map[stri
 		if _, ok := current[node.Name]; ok {
 			return fmt.Errorf("line %d:%d: constant '%s' already declared in this scope", node.Pos.Line, node.Pos.Column, node.Name)
 		}
-		bindingKind, err := classifyBinding("const", node.Value)
+		bindingKind, err := classifyBinding("const", node.Type, node.ArrayCapacity, node.Value)
 		if err != nil {
 			return fmt.Errorf("line %d:%d: %w", node.Pos.Line, node.Pos.Column, err)
 		}
@@ -198,6 +199,33 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 			return fmt.Errorf("line %d:%d: undefined identifier '%s'", node.Pos.Line, node.Pos.Column, node.Name)
 		}
 	case *ast.CallExpr:
+		if sel, ok := node.Function.(*ast.SelectorExpr); ok {
+			if ident, ok := sel.Object.(*ast.Identifier); ok {
+				if binding, exists := lookup(scopeStack, ident.Name); exists && isArrayBinding(binding) {
+					switch sel.Field {
+					case "push":
+						if len(node.Args) != 1 {
+							return fmt.Errorf("line %d:%d: push() expects one argument", node.Pos.Line, node.Pos.Column)
+						}
+						if err := checkExpr(node.Args[0], scopeStack); err != nil {
+							return err
+						}
+						argType, ok := inferLiteralType(node.Args[0], scopeStack)
+						if ok && !typeCompatible(arrayElemType(binding), argType) {
+							return fmt.Errorf("line %d:%d: push() type mismatch for array '%s'", node.Pos.Line, node.Pos.Column, ident.Name)
+						}
+						return nil
+					case "pop":
+						if len(node.Args) != 0 {
+							return fmt.Errorf("line %d:%d: pop() expects no arguments", node.Pos.Line, node.Pos.Column)
+						}
+						return nil
+					default:
+						return fmt.Errorf("line %d:%d: unsupported array method '%s'", node.Pos.Line, node.Pos.Column, sel.Field)
+					}
+				}
+			}
+		}
 		if err := checkExpr(node.Function, scopeStack); err != nil {
 			return err
 		}
@@ -208,18 +236,62 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 		}
 	case *ast.SelectorExpr:
 		if ident, ok := node.Object.(*ast.Identifier); ok {
-			if kind, exists := lookup(scopeStack, ident.Name); exists && isPinBinding(kind) {
-				if !ch32fun.IsValidPinMethod(node.Field) {
-					return fmt.Errorf("line %d:%d: unsupported pin method '%s'", node.Pos.Line, node.Pos.Column, node.Field)
+			if kind, exists := lookup(scopeStack, ident.Name); exists {
+				if isPinBinding(kind) {
+					if !ch32fun.IsValidPinMethod(node.Field) {
+						return fmt.Errorf("line %d:%d: unsupported pin method '%s'", node.Pos.Line, node.Pos.Column, node.Field)
+					}
+				}
+				if isArrayBinding(kind) {
+					if node.Field != "length" {
+						return fmt.Errorf("line %d:%d: unsupported array property '%s'", node.Pos.Line, node.Pos.Column, node.Field)
+					}
 				}
 			}
 		}
 		return checkExpr(node.Object, scopeStack)
+	case *ast.IndexExpr:
+		ident, ok := node.Object.(*ast.Identifier)
+		if !ok {
+			return fmt.Errorf("line %d:%d: array indexing requires an identifier target", node.Pos.Line, node.Pos.Column)
+		}
+		kind, exists := lookup(scopeStack, ident.Name)
+		if !exists || !isArrayBinding(kind) {
+			return fmt.Errorf("line %d:%d: '%s' is not an array", node.Pos.Line, node.Pos.Column, ident.Name)
+		}
+		if err := checkExpr(node.Index, scopeStack); err != nil {
+			return err
+		}
+		if idx, ok := indexLiteral(node.Index); ok {
+			if idx < 0 || idx >= arrayCapacity(kind) {
+				return fmt.Errorf("line %d:%d: array index %d out of bounds (capacity %d)", node.Pos.Line, node.Pos.Column, idx, arrayCapacity(kind))
+			}
+		}
+		return nil
 	case *ast.BinaryExpr:
 		if err := checkExpr(node.Left, scopeStack); err != nil {
 			return err
 		}
 		if isAssignmentOp(node.Op) {
+			if idxExpr, ok := node.Left.(*ast.IndexExpr); ok {
+				ident, ok := idxExpr.Object.(*ast.Identifier)
+				if !ok {
+					return fmt.Errorf("line %d:%d: indexed assignment requires identifier target", node.Pos.Line, node.Pos.Column)
+				}
+				binding, exists := lookup(scopeStack, ident.Name)
+				if !exists || !isArrayBinding(binding) {
+					return fmt.Errorf("line %d:%d: '%s' is not an array", node.Pos.Line, node.Pos.Column, ident.Name)
+				}
+				if idx, ok := indexLiteral(idxExpr.Index); ok {
+					if idx < 0 || idx >= arrayCapacity(binding) {
+						return fmt.Errorf("line %d:%d: array index %d out of bounds (capacity %d)", node.Pos.Line, node.Pos.Column, idx, arrayCapacity(binding))
+					}
+				}
+				valueType, ok := inferLiteralType(node.Right, scopeStack)
+				if ok && !typeCompatible(arrayElemType(binding), valueType) {
+					return fmt.Errorf("line %d:%d: type mismatch for array '%s' assignment", node.Pos.Line, node.Pos.Column, ident.Name)
+				}
+			}
 			if ident, ok := node.Left.(*ast.Identifier); ok {
 				if isConstBinding(scopeStack, ident.Name) {
 					return fmt.Errorf("line %d:%d: cannot assign to constant variable '%s'", node.Pos.Line, node.Pos.Column, ident.Name)
@@ -235,6 +307,24 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string) error {
 		}
 		return checkExpr(node.Expr, scopeStack)
 	case *ast.NumberLiteral, *ast.StringLiteral, *ast.BoolLiteral:
+		return nil
+	case *ast.ArrayLiteralExpr:
+		if len(node.Elements) == 0 {
+			return nil
+		}
+		firstType, ok := inferLiteralType(node.Elements[0], scopeStack)
+		if !ok {
+			return fmt.Errorf("line %d:%d: unsupported array element type", node.Pos.Line, node.Pos.Column)
+		}
+		for _, elem := range node.Elements[1:] {
+			if err := checkExpr(elem, scopeStack); err != nil {
+				return err
+			}
+			elemType, ok := inferLiteralType(elem, scopeStack)
+			if !ok || !typeCompatible(firstType, elemType) {
+				return fmt.Errorf("line %d:%d: array literal elements must be homogeneous", node.Pos.Line, node.Pos.Column)
+			}
+		}
 		return nil
 	case *ast.ArrowFunctionExpr:
 		callbackScope := map[string]string{}
@@ -265,7 +355,7 @@ func lookup(scopeStack []map[string]string, name string) (string, bool) {
 func isConstBinding(scopeStack []map[string]string, name string) bool {
 	for i := len(scopeStack) - 1; i >= 0; i-- {
 		if val, ok := scopeStack[i][name]; ok {
-			return val == "const"
+			return val == "const" || strings.HasPrefix(val, "array-const-")
 		}
 	}
 	return false
@@ -287,7 +377,48 @@ func renderUnaryTarget(expr ast.Expr) string {
 	return ""
 }
 
-func classifyBinding(baseKind string, value ast.Expr) (string, error) {
+func classifyBinding(baseKind string, declaredType string, declaredCapacity int, value ast.Expr) (string, error) {
+	if declaredCapacity > 0 {
+		elemType := declaredType
+		if elemType == "" {
+			return "", fmt.Errorf("array declarations with explicit capacity require an element type annotation")
+		}
+		lit, ok := value.(*ast.ArrayLiteralExpr)
+		if !ok {
+			return "", fmt.Errorf("array declarations currently require an array literal initializer")
+		}
+		if len(lit.Elements) > declaredCapacity {
+			return "", fmt.Errorf("array initializer length %d exceeds declared capacity %d", len(lit.Elements), declaredCapacity)
+		}
+		if len(lit.Elements) == 0 {
+			return encodeArrayBinding(baseKind, elemType, declaredCapacity), nil
+		}
+		for _, elem := range lit.Elements {
+			et, ok := inferLiteralType(elem, nil)
+			if !ok || !typeCompatible(elemType, et) {
+				return "", fmt.Errorf("array element type mismatch for declared type '%s'", elemType)
+			}
+		}
+		return encodeArrayBinding(baseKind, elemType, declaredCapacity), nil
+	}
+
+	if lit, ok := value.(*ast.ArrayLiteralExpr); ok {
+		if len(lit.Elements) == 0 {
+			return "", fmt.Errorf("empty array literal requires explicit type and capacity, e.g. let a: int32[8] = []")
+		}
+		elemType, ok := inferLiteralType(lit.Elements[0], nil)
+		if !ok {
+			return "", fmt.Errorf("unsupported array element type")
+		}
+		for _, elem := range lit.Elements[1:] {
+			et, ok := inferLiteralType(elem, nil)
+			if !ok || !typeCompatible(elemType, et) {
+				return "", fmt.Errorf("array literal elements must be homogeneous")
+			}
+		}
+		return encodeArrayBinding(baseKind, elemType, len(lit.Elements)), nil
+	}
+
 	if call, ok := value.(*ast.CallExpr); ok {
 		if fn, ok := call.Function.(*ast.Identifier); ok && fn.Name == "pin" {
 			if len(call.Args) != 1 {
@@ -308,6 +439,101 @@ func classifyBinding(baseKind string, value ast.Expr) (string, error) {
 
 func isPinBinding(kind string) bool {
 	return strings.HasPrefix(kind, "pin-")
+}
+
+func encodeArrayBinding(baseKind, elemType string, capacity int) string {
+	return fmt.Sprintf("array-%s-%s-%d", baseKind, elemType, capacity)
+}
+
+func isArrayBinding(kind string) bool {
+	return strings.HasPrefix(kind, "array-")
+}
+
+func arrayElemType(kind string) string {
+	parts := strings.Split(kind, "-")
+	if len(parts) < 4 {
+		return "number"
+	}
+	return parts[2]
+}
+
+func arrayCapacity(kind string) int {
+	parts := strings.Split(kind, "-")
+	if len(parts) < 4 {
+		return 0
+	}
+	n, err := strconv.Atoi(parts[3])
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
+func indexLiteral(expr ast.Expr) (int, bool) {
+	n, ok := expr.(*ast.NumberLiteral)
+	if !ok {
+		return 0, false
+	}
+	if strings.Contains(n.Value, ".") {
+		return 0, false
+	}
+	v, err := strconv.Atoi(n.Value)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+func inferLiteralType(expr ast.Expr, scopeStack []map[string]string) (string, bool) {
+	switch node := expr.(type) {
+	case *ast.NumberLiteral:
+		if strings.Contains(node.Value, ".") {
+			return "float32", true
+		}
+		return "int32", true
+	case *ast.StringLiteral:
+		return "string", true
+	case *ast.BoolLiteral:
+		return "boolean", true
+	case *ast.Identifier:
+		if scopeStack == nil {
+			return "", false
+		}
+		binding, ok := lookup(scopeStack, node.Name)
+		if !ok {
+			return "", false
+		}
+		if isArrayBinding(binding) {
+			return arrayElemType(binding), true
+		}
+		switch binding {
+		case "var", "const":
+			return "int32", true
+		default:
+			return "", false
+		}
+	default:
+		return "", false
+	}
+}
+
+func typeCompatible(expected string, actual string) bool {
+	if expected == actual {
+		return true
+	}
+	if isNumericType(expected) && isNumericType(actual) {
+		return true
+	}
+	return false
+}
+
+func isNumericType(t string) bool {
+	switch t {
+	case "int8", "uint8", "int16", "uint16", "int32", "uint32", "float32", "number":
+		return true
+	default:
+		return false
+	}
 }
 
 func builtin(name string) bool {

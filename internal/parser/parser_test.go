@@ -60,3 +60,28 @@ if ((a << 1) === (b ^ 2)) { c &= 3; }
 		t.Fatalf("expected 2 statements, got %d", len(program.Statements))
 	}
 }
+
+func TestParseBoundedArraySyntax(t *testing.T) {
+	program, err := ParseProgram(`let readings: int32[8] = [10, 20, 30];
+readings.push(40);
+const latest = readings.pop();
+const count = readings.length;
+readings[0] = latest;
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(program.Statements) != 5 {
+		t.Fatalf("expected 5 statements, got %d", len(program.Statements))
+	}
+}
+
+func TestParseEmptyBoundedArrayLiteral(t *testing.T) {
+	program, err := ParseProgram(`let queue: uint16[8] = [];`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(program.Statements) != 1 {
+		t.Fatalf("expected 1 statement, got %d", len(program.Statements))
+	}
+}

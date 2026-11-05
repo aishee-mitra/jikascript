@@ -92,3 +92,53 @@ func TestCheckAllowsSwitchAndLoopFlowControl(t *testing.T) {
 		t.Fatalf("unexpected checker error: %v", err)
 	}
 }
+
+func TestCheckAllowsBoundedArrayOps(t *testing.T) {
+	program, err := parser.ParseProgram(`let readings: int32[6] = [1, 2, 3];
+readings.push(4);
+const latest = readings.pop();
+readings[0] = latest;
+const count = readings.length;
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err != nil {
+		t.Fatalf("unexpected checker error: %v", err)
+	}
+}
+
+func TestCheckRejectsArrayCapacityOverflow(t *testing.T) {
+	program, err := parser.ParseProgram(`let readings: int32[2] = [1, 2, 3];`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "exceeds declared capacity") {
+		t.Fatalf("expected capacity overflow error, got %v", err)
+	}
+}
+
+func TestCheckRejectsConstArrayReassignmentButAllowsMutation(t *testing.T) {
+	program, err := parser.ParseProgram(`const readings: int32[4] = [1, 2];
+readings.push(3);
+readings = [4, 5];
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "cannot assign to constant variable") {
+		t.Fatalf("expected const reassignment error, got %v", err)
+	}
+}
+
+func TestCheckRejectsArrayPushTypeMismatch(t *testing.T) {
+	program, err := parser.ParseProgram(`let readings: int32[4] = [1, 2];
+readings.push("oops");
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "push() type mismatch") {
+		t.Fatalf("expected push type mismatch error, got %v", err)
+	}
+}

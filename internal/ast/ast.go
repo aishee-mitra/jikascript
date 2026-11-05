@@ -19,20 +19,22 @@ type Expr interface{ exprNode() }
 
 // VarDecl describes a mutable binding.
 type VarDecl struct {
-	Name  string
-	Type  string
-	Value Expr
-	Pos   Position
+	Name          string
+	Type          string
+	ArrayCapacity int
+	Value         Expr
+	Pos           Position
 }
 
 func (*VarDecl) stmtNode() {}
 
 // ConstDecl describes an immutable binding.
 type ConstDecl struct {
-	Name  string
-	Type  string
-	Value Expr
-	Pos   Position
+	Name          string
+	Type          string
+	ArrayCapacity int
+	Value         Expr
+	Pos           Position
 }
 
 func (*ConstDecl) stmtNode() {}
@@ -218,6 +220,15 @@ type SelectorExpr struct {
 
 func (*SelectorExpr) exprNode() {}
 
+// IndexExpr represents indexed access such as `items[i]`.
+type IndexExpr struct {
+	Object Expr
+	Index  Expr
+	Pos    Position
+}
+
+func (*IndexExpr) exprNode() {}
+
 // BinaryExpr represents infix expression.
 type BinaryExpr struct {
 	Left  Expr
@@ -236,3 +247,11 @@ type UnaryExpr struct {
 }
 
 func (*UnaryExpr) exprNode() {}
+
+// ArrayLiteralExpr represents array literals like [1, 2, 3].
+type ArrayLiteralExpr struct {
+	Elements []Expr
+	Pos      Position
+}
+
+func (*ArrayLiteralExpr) exprNode() {}

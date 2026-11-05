@@ -342,25 +342,84 @@ Do not collapse `==` and `===` into identical behavior without explicitly defini
 
 ### Arrays
 
-Support fixed-size arrays initially.
+Support **bounded, dynamically sized, homogeneous arrays** backed by static storage.
 
 Example:
 
 ```javascript
-const samples = new uint16[16];
+const readings: int32[8] = [21, 23, 25];
 
-samples[0] = 100;
+readings.push(27);
+const latest = readings.pop();
+const count = readings.length;
+readings[0] = latest;
 ```
 
 Requirements:
 
-- Static allocation.
+- Static allocation only (no heap allocation).
 - Compile-time known capacity.
-- Indexing.
-- Assignment to mutable elements.
-- Bounds checking where statically possible.
+- Runtime logical length (`length`) that changes via `push()` and `pop()`.
+- Homogeneous element type.
+- Indexed reads/writes.
+- Bounds and capacity checks.
 
-Dynamic array resizing is excluded.
+### Array declaration syntax (v0.1)
+
+Use a single declaration form:
+
+```javascript
+let values: int32[8] = [1, 2, 3];
+```
+
+Rules:
+
+- `T[N]` declares element type `T` and fixed capacity `N`.
+- `N` must be a positive integer literal.
+- Initializer length may be less than or equal to capacity.
+- Empty arrays require explicit type and capacity:
+
+```javascript
+let queue: uint16[16] = [];
+```
+
+Array capacity inference is allowed only when no explicit capacity is declared:
+
+```javascript
+let values = [1, 2, 3]; // inferred capacity = 3
+```
+
+### Array operations (v0.1)
+
+Supported:
+
+- Array literals: `[10, 20, 30]`
+- Indexed reads: `values[i]`
+- Indexed writes: `values[i] = x`
+- Length property: `values.length`
+- `values.push(x)`
+- `values.pop()`
+
+Not supported in v0.1:
+
+- Sparse arrays
+- Mixed-type arrays
+- Automatic resizing
+- Prototype behavior
+- `shift()` / `unshift()`
+
+### Array safety and failure semantics
+
+The compiler should reject statically provable invalid cases (for example, initializer length above declared capacity, or literal index out of bounds).
+
+For runtime-invalid operations, generated C must fail predictably using a minimal fail-fast trap function (non-returning infinite loop):
+
+- `push()` on a full array.
+- `pop()` on an empty array.
+- Read with invalid index.
+- Write with invalid index.
+
+This avoids undefined behavior and out-of-bounds memory access without introducing exceptions or heap-based error systems.
 
 ### Strings
 

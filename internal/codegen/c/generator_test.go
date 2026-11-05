@@ -75,3 +75,38 @@ func TestGenerateSwitchAndStrictEquality(t *testing.T) {
 		t.Fatal("strict equality should be emitted as C equality operator")
 	}
 }
+
+func TestGenerateBoundedArrayHelpers(t *testing.T) {
+	program, err := parser.ParseProgram(`let readings: int32[4] = [10, 20];
+readings.push(30);
+const latest = readings.pop();
+readings[0] = latest;
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	out := Generate(program)
+	if !strings.Contains(out, "readings_push") || !strings.Contains(out, "readings_pop") {
+		t.Fatal("expected array helper functions for push/pop")
+	}
+	if !strings.Contains(out, ".length") || !strings.Contains(out, ".capacity") {
+		t.Fatal("expected logical length and fixed capacity fields")
+	}
+	if !strings.Contains(out, "readings_set") || !strings.Contains(out, "readings_get") {
+		t.Fatal("expected indexed read/write helpers")
+	}
+	if !strings.Contains(out, "jikascript_array_fail") {
+		t.Fatal("expected shared array failure handler")
+	}
+	if !strings.Contains(out, "index < 0") || !strings.Contains(out, ">= readings.length") {
+		t.Fatal("expected runtime bounds checks against logical length")
+	}
+	if !strings.Contains(out, "readings.length >= readings.capacity") {
+		t.Fatal("expected push capacity guard")
+	}
+	pushPos := strings.Index(out, "readings_push(30);")
+	popPos := strings.Index(out, "latest = readings_pop();")
+	if pushPos == -1 || popPos == -1 || pushPos > popPos {
+		t.Fatal("expected top-level array operations to preserve source order")
+	}
+}

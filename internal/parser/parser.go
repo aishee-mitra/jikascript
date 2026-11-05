@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"jikascript/internal/ast"
@@ -277,6 +278,7 @@ func (p *Parser) parseVarDecl(constDecl bool) (ast.Stmt, error) {
 	p.next()
 
 	vartype := ""
+	arrayCapacity := 0
 	if p.cur.Type == lexer.PUNCT && p.cur.Literal == ":" {
 		p.next()
 		if p.cur.Type != lexer.IDENT && p.cur.Type != lexer.KEYWORD {
@@ -284,6 +286,22 @@ func (p *Parser) parseVarDecl(constDecl bool) (ast.Stmt, error) {
 		}
 		vartype = p.cur.Literal
 		p.next()
+		if p.cur.Type == lexer.PUNCT && p.cur.Literal == "[" {
+			p.next()
+			if p.cur.Type != lexer.NUMBER {
+				return nil, fmt.Errorf("line %d:%d: expected numeric array capacity", p.cur.Line, p.cur.Column)
+			}
+			capValue, err := strconv.Atoi(p.cur.Literal)
+			if err != nil || capValue <= 0 {
+				return nil, fmt.Errorf("line %d:%d: invalid array capacity %q", p.cur.Line, p.cur.Column, p.cur.Literal)
+			}
+			arrayCapacity = capValue
+			p.next()
+			if p.cur.Type != lexer.PUNCT || p.cur.Literal != "]" {
+				return nil, fmt.Errorf("line %d:%d: expected ']' after array capacity", p.cur.Line, p.cur.Column)
+			}
+			p.next()
+		}
 	}
 
 	if p.cur.Type != lexer.OPERATOR || p.cur.Literal != "=" {
@@ -295,9 +313,9 @@ func (p *Parser) parseVarDecl(constDecl bool) (ast.Stmt, error) {
 		return nil, err
 	}
 	if constDecl {
-		return &ast.ConstDecl{Name: name, Type: vartype, Value: value, Pos: pos}, nil
+		return &ast.ConstDecl{Name: name, Type: vartype, ArrayCapacity: arrayCapacity, Value: value, Pos: pos}, nil
 	}
-	return &ast.VarDecl{Name: name, Type: vartype, Value: value, Pos: pos}, nil
+	return &ast.VarDecl{Name: name, Type: vartype, ArrayCapacity: arrayCapacity, Value: value, Pos: pos}, nil
 }
 
 func (p *Parser) parseFunctionDecl() (ast.Stmt, error) {
@@ -656,6 +674,30 @@ func (p *Parser) parsePrimary() (ast.Expr, error) {
 		}
 		return nil, fmt.Errorf("line %d:%d: unexpected keyword '%s' in expression", p.cur.Line, p.cur.Column, p.cur.Literal)
 	case lexer.PUNCT:
+		if p.cur.Literal == "[" {
+			pos := ast.Position{Line: p.cur.Line, Column: p.cur.Column}
+			p.next()
+			elements := []ast.Expr{}
+			if !(p.cur.Type == lexer.PUNCT && p.cur.Literal == "]") {
+				for {
+					elem, err := p.parseExpression()
+					if err != nil {
+						return nil, err
+					}
+					elements = append(elements, elem)
+					if p.cur.Type == lexer.PUNCT && p.cur.Literal == "," {
+						p.next()
+						continue
+					}
+					break
+				}
+			}
+			if p.cur.Type != lexer.PUNCT || p.cur.Literal != "]" {
+				return nil, fmt.Errorf("line %d:%d: expected ']' after array literal", p.cur.Line, p.cur.Column)
+			}
+			p.next()
+			return &ast.ArrayLiteralExpr{Elements: elements, Pos: pos}, nil
+		}
 		if p.cur.Literal == "(" {
 			p.next()
 			expr, err := p.parseExpression()
@@ -707,6 +749,18 @@ func (p *Parser) parsePostfix(expr ast.Expr) (ast.Expr, error) {
 			}
 			p.next()
 			expr = &ast.CallExpr{Function: expr, Args: args, Pos: ast.Position{Line: p.cur.Line, Column: p.cur.Column}}
+		case p.cur.Type == lexer.PUNCT && p.cur.Literal == "[":
+			indexPos := ast.Position{Line: p.cur.Line, Column: p.cur.Column}
+			p.next()
+			idxExpr, err := p.parseExpression()
+			if err != nil {
+				return nil, err
+			}
+			if p.cur.Type != lexer.PUNCT || p.cur.Literal != "]" {
+				return nil, fmt.Errorf("line %d:%d: expected ']' after index expression", p.cur.Line, p.cur.Column)
+			}
+			p.next()
+			expr = &ast.IndexExpr{Object: expr, Index: idxExpr, Pos: indexPos}
 		default:
 			return expr, nil
 		}

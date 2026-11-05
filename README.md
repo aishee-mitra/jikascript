@@ -89,6 +89,20 @@ Artifacts:
 - [multiple_tasks.jika](/Users/sayan/Code/JikaScript/examples/multiple_tasks.jika)
 - [conditional_task.jika](/Users/sayan/Code/JikaScript/examples/conditional_task.jika)
 
+## Bounded arrays (v0.1)
+
+JikaScript supports bounded, homogeneous arrays with static capacity and mutable logical length.
+
+```javascript
+let readings: int32[8] = [21, 23, 25];
+readings.push(27);
+const latest = readings.pop();
+const count = readings.length;
+readings[0] = latest;
+```
+
+`push()` is capacity-checked and `pop()`/index operations are bounds-checked in generated C.
+
 ## Validation commands
 
 ```bash
