@@ -930,17 +930,19 @@ Command:
 
 ```bash
 jikascript build blink.jika
+# or, after a transpile step and optional hand-edit:
+jikascript build blink.c
 ```
 
 Purpose:
 
-Generate production firmware.
+Generate production firmware from either a `.jika` source file or a generated readable C file.
 
 Requirements:
 
-- Parse and validate the source.
-- Generate optimized production C.
-- Apply safe compiler-side optimizations where appropriate.
+- Parse and validate `.jika` source when the input is a source file.
+- Generate readable C during the transpile step if the input is `.jika`.
+- Accept a generated `.c` file as a build input so the generated code may be reviewed or hand-edited before flashing.
 - Invoke the configured target C toolchain.
 - Link the required runtime and hardware libraries.
 - Produce firmware artifacts.
@@ -986,11 +988,14 @@ Requirements:
 - Keep generated code deterministic.
 - Do not apply readability-destroying minification.
 - Do not invoke the native firmware compiler unless explicitly requested.
+- Allow the resulting C to be checked into a review/edit loop before invoking `build`.
 
 Example:
 
 ```bash
 jikascript transpile blink.jika -o blink.c
+# review/edit blink.c
+jikascript build blink.c
 ```
 
 ## 9.3 check
@@ -1011,8 +1016,9 @@ Potential options:
 
 ```bash
 jikascript build blink.jika --target ch32v003
+jikascript build blink.c --target ch32v003
 jikascript build blink.jika --optimize size
-jikascript build blink.jika --optimize speed
+jikascript build blink.c --optimize speed
 jikascript build blink.jika -o dist/blink.elf
 jikascript transpile blink.jika --target ch32v003
 ```

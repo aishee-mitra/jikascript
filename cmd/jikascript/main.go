@@ -48,7 +48,7 @@ func printUsage() {
 	fmt.Println("usage:")
 	fmt.Println("  jikascript check <input.jika>")
 	fmt.Println("  jikascript transpile <input.jika> [-o output.c] [--target ch32v003]")
-	fmt.Println("  jikascript build <input.jika> [--target ch32v003] [--optimize size|speed]")
+	fmt.Println("  jikascript build <input.jika|input.c> [--target ch32v003] [--optimize size|speed]")
 }
 
 func runCheck(args []string) error {
@@ -124,15 +124,15 @@ func runBuild(args []string) error {
 	if opts.input == "" {
 		return fmt.Errorf("missing input file")
 	}
-	outputDir, base := resolveBuildOutput(opts.input, opts.output)
+
+	source, outputDir, base, err := prepareBuildInput(opts.input, opts.output, opts.target)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
 		return err
 	}
-	generated := filepath.Join(outputDir, base+".c")
-	if err := runTranspile([]string{opts.input, "-o", generated, "--target", opts.target}); err != nil {
-		return err
-	}
-	if err := buildCH32fun(generated, outputDir, base, opts.optimize); err != nil {
+	if err := buildCH32fun(source, outputDir, base, opts.optimize); err != nil {
 		return err
 	}
 	fmt.Printf("build: generated %s, %s, %s\n",
@@ -141,6 +141,24 @@ func runBuild(args []string) error {
 		filepath.Join(outputDir, base+".bin"),
 	)
 	return nil
+}
+
+func prepareBuildInput(inputPath, output, target string) (string, string, string, error) {
+	ext := strings.ToLower(filepath.Ext(inputPath))
+	outputDir, base := resolveBuildOutput(inputPath, output)
+
+	switch ext {
+	case ".jika":
+		generated := filepath.Join(outputDir, base+".c")
+		if err := runTranspile([]string{inputPath, "-o", generated, "--target", target}); err != nil {
+			return "", "", "", err
+		}
+		return generated, outputDir, base, nil
+	case ".c":
+		return inputPath, outputDir, base, nil
+	default:
+		return "", "", "", fmt.Errorf("input must be a .jika source file or generated .c file: %s", inputPath)
+	}
 }
 
 type cliOptions struct {

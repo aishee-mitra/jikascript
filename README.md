@@ -36,7 +36,7 @@ go build ./cmd/jikascript
 ```text
 jikascript check <input.jika>
 jikascript transpile <input.jika> [-o output.c] [--target ch32v003]
-jikascript build <input.jika> [-o output-prefix] [--target ch32v003] [--optimize size|speed]
+jikascript build <input.jika|input.c> [-o output-prefix] [--target ch32v003] [--optimize size|speed]
 ```
 
 ### check
@@ -57,6 +57,8 @@ jikascript transpile examples/blink.jika -o build/blink.c
 
 ### build (CH32V003 + CH32fun)
 
+`build` accepts either a `.jika` source file or a generated readable `.c` file. This lets you review or hand-edit the transpiled C before building firmware.
+
 Set environment:
 
 ```bash
@@ -70,10 +72,18 @@ export JIKASCRIPT_RISCV_GCC=/path/to/riscv64-unknown-elf-gcc
 export JIKASCRIPT_OBJCOPY=/path/to/riscv64-unknown-elf-objcopy
 ```
 
-Then build:
+Build directly from source:
 
 ```bash
 jikascript build examples/blink.jika --target ch32v003 --optimize size
+```
+
+Or generate readable C first, edit it, then build from the generated file:
+
+```bash
+jikascript transpile examples/blink.jika -o build/blink.c
+# edit build/blink.c as needed
+jikascript build build/blink.c --target ch32v003 --optimize size
 ```
 
 Optional custom artifact prefix:

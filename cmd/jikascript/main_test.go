@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -73,5 +75,41 @@ func TestResolveBuildOutputWithCustomPath(t *testing.T) {
 	dir, base := resolveBuildOutput("examples/blink.jika", "dist/fw/blink.elf")
 	if dir != "dist/fw" || base != "blink" {
 		t.Fatalf("unexpected custom build output: dir=%q base=%q", dir, base)
+	}
+}
+
+func TestPrepareBuildInputAcceptsGeneratedC(t *testing.T) {
+	source, dir, base, err := prepareBuildInput("build/blink.c", "", "ch32v003")
+	if err != nil {
+		t.Fatalf("prepareBuildInput error for generated C: %v", err)
+	}
+	if source != "build/blink.c" {
+		t.Fatalf("unexpected generated C source path: %q", source)
+	}
+	if dir != "build" || base != "blink" {
+		t.Fatalf("unexpected generated C output metadata: dir=%q base=%q", dir, base)
+	}
+}
+
+func TestPrepareBuildInputTranspilesJikaSource(t *testing.T) {
+	tempDir := t.TempDir()
+	inputPath := filepath.Join(tempDir, "blink.jika")
+	if err := os.WriteFile(inputPath, []byte("const led = pin(\"PC1\");\nled.output();\n"), 0o644); err != nil {
+		t.Fatalf("write temp .jika file: %v", err)
+	}
+	outputPrefix := filepath.Join(tempDir, "firmware.elf")
+
+	source, dir, base, err := prepareBuildInput(inputPath, outputPrefix, "ch32v003")
+	if err != nil {
+		t.Fatalf("prepareBuildInput error for .jika file: %v", err)
+	}
+	if !strings.HasSuffix(source, ".c") {
+		t.Fatalf("expected generated C output path, got %q", source)
+	}
+	if dir != tempDir || base != "firmware" {
+		t.Fatalf("unexpected .jika output metadata: dir=%q base=%q", dir, base)
+	}
+	if _, err := os.Stat(source); err != nil {
+		t.Fatalf("generated C file was not created: %v", err)
 	}
 }
