@@ -11,6 +11,13 @@ bin:
 install:
 	go install ./cmd/jikascript
 
+get-ch32libs dest="third_party/ch32fun" ref="master":
+	mkdir -p "$(dirname "{{dest}}")"
+	if [ ! -d "{{dest}}/.git" ]; then git clone https://github.com/cnlohr/ch32fun.git "{{dest}}"; fi
+	git -C "{{dest}}" fetch --all --tags
+	git -C "{{dest}}" checkout "{{ref}}"
+	@echo "Set JIKASCRIPT_CH32FUN to: $$(cd "{{dest}}" && pwd)"
+
 check file="examples/blink.jika": bin
 	./jikascript check {{file}}
 

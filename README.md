@@ -39,6 +39,7 @@ If you use [`just`](https://github.com/casey/just), the repo includes a [justfil
 just help
 just bin
 just install
+just get-ch32libs
 just check
 just transpile
 just build
@@ -77,6 +78,13 @@ Set environment to the parent directory of a real CH32fun checkout:
 
 ```bash
 export JIKASCRIPT_CH32FUN=/absolute/path/to/ch32fun-root
+```
+
+You can also fetch CH32fun with the helper recipe, then point the env var there:
+
+```bash
+just get-ch32libs
+export JIKASCRIPT_CH32FUN="$(cd third_party/ch32fun && pwd)"
 ```
 
 The build expects this layout under that path:
