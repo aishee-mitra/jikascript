@@ -54,12 +54,15 @@ You'll get clean, standard C99 that sets up the pin, registers the periodic task
 When you're ready to build for the CH32V003 using CH32fun:
 
 ```bash
-# Point to your local ch32fun checkout
-export JIKASCRIPT_CH32FUN=/path/to/ch32fun
+# Optional: clone ch32fun if you haven't yet
+just get-ch32libs
+export JIKASCRIPT_CH32FUN="$(cd third_party/ch32fun && pwd)"
 
-# Build flashable firmware
+# Build flashable firmware (or use: just build)
 jikascript build blink.jika --target ch32v003 --optimize size
 ```
+
+*(Tip: If you use [`just`](https://github.com/casey/just), you can simply run `just build` or `just transpile`!)*
 
 This produces ready-to-flash binaries: `build/blink.bin`, `build/blink.hex`, and `build/blink.elf`.
 
