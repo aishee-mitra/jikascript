@@ -943,8 +943,10 @@ Requirements:
 - Parse and validate `.jika` source when the input is a source file.
 - Generate readable C during the transpile step if the input is `.jika`.
 - Accept a generated `.c` file as a build input so the generated code may be reviewed or hand-edited before flashing.
+- Require `JIKASCRIPT_CH32FUN` to point to a CH32fun checkout root that contains `ch32fun/ch32fun.h`.
 - Invoke the configured target C toolchain.
 - Link the required runtime and hardware libraries.
+- Ensure a minimal `funconfig.h` is available in the generated/input C directory when one is not already present.
 - Produce firmware artifacts.
 - Report build errors clearly.
 
@@ -1021,6 +1023,15 @@ jikascript build blink.jika --optimize size
 jikascript build blink.c --optimize speed
 jikascript build blink.jika -o dist/blink.elf
 jikascript transpile blink.jika --target ch32v003
+```
+
+Build environment variables:
+
+```bash
+export JIKASCRIPT_CH32FUN=/absolute/path/to/ch32fun-root
+# optional overrides:
+export JIKASCRIPT_RISCV_GCC=/path/to/riscv64-unknown-elf-gcc
+export JIKASCRIPT_OBJCOPY=/path/to/riscv64-unknown-elf-objcopy
 ```
 
 The initial release only needs essential functionality. Do not implement every possible option prematurely.
