@@ -112,4 +112,21 @@ func TestPrepareBuildInputTranspilesJikaSource(t *testing.T) {
 	if _, err := os.Stat(source); err != nil {
 		t.Fatalf("generated C file was not created: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(tempDir, "funconfig.h")); err != nil {
+		t.Fatalf("expected generated funconfig.h for build inputs: %v", err)
+	}
+}
+
+func TestEnsureFunConfigCreatesMinimalHeader(t *testing.T) {
+	tempDir := t.TempDir()
+	if err := ensureFunConfig(tempDir); err != nil {
+		t.Fatalf("ensureFunConfig error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(tempDir, "funconfig.h"))
+	if err != nil {
+		t.Fatalf("read generated funconfig.h: %v", err)
+	}
+	if !strings.Contains(string(data), "#ifndef _FUNCONFIG_H") {
+		t.Fatal("expected standard CH32fun guard in generated funconfig.h")
+	}
 }

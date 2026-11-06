@@ -153,8 +153,14 @@ func prepareBuildInput(inputPath, output, target string) (string, string, string
 		if err := runTranspile([]string{inputPath, "-o", generated, "--target", target}); err != nil {
 			return "", "", "", err
 		}
+		if err := ensureFunConfig(outputDir); err != nil {
+			return "", "", "", err
+		}
 		return generated, outputDir, base, nil
 	case ".c":
+		if err := ensureFunConfig(filepath.Dir(inputPath)); err != nil {
+			return "", "", "", err
+		}
 		return inputPath, outputDir, base, nil
 	default:
 		return "", "", "", fmt.Errorf("input must be a .jika source file or generated .c file: %s", inputPath)
@@ -245,6 +251,9 @@ func buildCH32fun(sourceC, outputDir, base, optimize string) error {
 	if ch32funRoot == "" {
 		return fmt.Errorf("JIKASCRIPT_CH32FUN must point to a CH32fun checkout")
 	}
+	if err := ensureFunConfig(filepath.Dir(sourceC)); err != nil {
+		return err
+	}
 
 	target := ch32fun.NewTarget()
 	cc := toolOrDefault("JIKASCRIPT_RISCV_GCC", target.ToolchainTriple+"-gcc")
@@ -263,6 +272,7 @@ func buildCH32fun(sourceC, outputDir, base, optimize string) error {
 		optFlag,
 		"-march=rv32ec",
 		"-mabi=ilp32e",
+		"-I", filepath.Dir(sourceC),
 		"-I", filepath.Join(ch32funRoot, "ch32fun"),
 		"-I", filepath.Join(".", "runtime", "periodic"),
 		"-I", filepath.Join(".", "targets", "ch32fun", "runtime"),
@@ -283,6 +293,27 @@ func buildCH32fun(sourceC, outputDir, base, optimize string) error {
 		return fmt.Errorf("objcopy bin failed: %w", err)
 	}
 	return nil
+}
+
+func ensureFunConfig(dir string) error {
+	configPath := filepath.Join(dir, "funconfig.h")
+	if _, err := os.Stat(configPath); err == nil {
+		return nil
+	}
+	content := `#ifndef _FUNCONFIG_H
+#define _FUNCONFIG_H
+
+#define FUNCONF_USE_HSI 1
+#define FUNCONF_USE_PLL 0
+#define FUNCONF_USE_DEBUGPRINTF 0
+#define FUNCONF_USE_UARTPRINTF 0
+
+#endif
+`
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(configPath, []byte(content), 0o644)
 }
 
 func runCmd(name string, args ...string) error {
