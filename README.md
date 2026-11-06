@@ -31,6 +31,20 @@ For CH32V003 firmware builds:
 go build ./cmd/jikascript
 ```
 
+## Optional: justfile shortcuts
+
+If you use [`just`](https://github.com/casey/just), the repo includes a [justfile](/Users/sayan/Code/MicroJS/justfile) with beginner-friendly recipes:
+
+```bash
+just help
+just bin
+just install
+just check
+just transpile
+just build
+just build-c
+```
+
 ## CLI usage
 
 ```text
