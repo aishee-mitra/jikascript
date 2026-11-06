@@ -59,10 +59,25 @@ jikascript transpile examples/blink.jika -o build/blink.c
 
 `build` accepts either a `.jika` source file or a generated readable `.c` file. This lets you review or hand-edit the transpiled C before building firmware.
 
-Set environment:
+Set environment to the parent directory of a real CH32fun checkout:
 
 ```bash
-export JIKASCRIPT_CH32FUN=/absolute/path/to/ch32fun
+export JIKASCRIPT_CH32FUN=/absolute/path/to/ch32fun-root
+```
+
+The build expects this layout under that path:
+
+```text
+/absolute/path/to/ch32fun-root/
+  ch32fun/
+    ch32fun.h
+    ...
+```
+
+If `JIKASCRIPT_CH32FUN` is not set, the CH32fun build fails immediately with:
+
+```text
+JIKASCRIPT_CH32FUN must point to a CH32fun checkout
 ```
 
 Optional tool overrides:
