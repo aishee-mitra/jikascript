@@ -1,0 +1,15 @@
+// ADC sampling on PD4 (channel A7) driving an LED threshold.
+const sensor = adc("PD4");
+const led = pin("PC1");
+
+led.output();
+
+task("sample", 200, () => {
+    if (sensor.read() > 512) {
+        led.write(HIGH);
+    } else {
+        led.write(LOW);
+    }
+});
+
+scheduler.start();

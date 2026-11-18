@@ -786,11 +786,31 @@ A pwm object supports exactly two methods:
 The backend must validate the timer-capable pin and supported methods. PD7 is
 the NRST pin, so using it requires disabling NRST on the target.
 
-## 7.4 Future peripherals
+## 7.4 ADC
+
+Example:
+
+```javascript
+const sensor = adc("PD4");
+
+let value = sensor.read();
+```
+
+`adc()` takes one string-literal pin argument. The CH32V003 backend supports the
+eight external channels A0..A7 on PA2, PA1, PC4, PD2, PD3, PD5, PD6, and PD4; the
+compiler rejects any other pin.
+
+An adc object supports exactly one method:
+
+- `read()` starts a single-ended conversion and returns the raw 10-bit sample
+  (0..1023) as an `int`.
+
+The backend must validate the analog-capable pin and supported methods.
+
+## 7.5 Future peripherals
 
 The following are planned extensions:
 
-- ADC
 - SPI
 - I2C
 - Hardware timers

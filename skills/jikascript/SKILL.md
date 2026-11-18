@@ -115,6 +115,10 @@ serial.println("hello");
 const led = pwm("PC1");
 led.set(50);
 
+// ADC on an analog-capable pin (PA2, PA1, PC4, PD2, PD3, PD5, PD6, PD4)
+const sensor = adc("PD4");
+let sample = sensor.read();
+
 // Cooperative periodic tasks
 task("heartbeat", 500, () => { led.toggle(); });
 
@@ -131,7 +135,7 @@ Detailed, exhaustive references available on demand:
 - `references/objects.md` — Static object records: declaration, struct lowering, mutable properties, compile-time safety.
 - `references/tasks.md` — Cooperative periodic tasks and the scheduler model.
 - `references/scheduler.md` — Standalone pure-C periodic scheduler API, scheduling rules, and timer adapter.
-- `references/hardware.md` — GPIO, UART, and PWM hardware API (`pin`, `uart`, `pwm`, `output`, `input`, `read`, `write`, `println`, `set`, `setFrequency`, `toggle`, `HIGH`, `LOW`).
+- `references/hardware.md` — GPIO, UART, PWM, and ADC hardware API (`pin`, `uart`, `pwm`, `adc`, `output`, `input`, `read`, `write`, `println`, `set`, `setFrequency`, `toggle`, `HIGH`, `LOW`).
 - `references/includes.md` — Multi-file `include` splicing rules and example.
 - `references/cli.md` — Install, build, CLI commands, flags, board/env selection, optimization, PlatformIO artifacts.
 - `references/example-programs.md` — Complete end-to-end example programs.
@@ -143,7 +147,7 @@ Detailed, exhaustive references available on demand:
   and memory-mapped data.
 - `==` and `===` are both strict and non-coercing. Mixed-type comparisons are
   compile-time errors — never compare a `number` to a `string`.
-- Reserve the words `task`, `scheduler`, `start`, `pin`, `uart`, `pwm`,
+- Reserve the words `task`, `scheduler`, `start`, `pin`, `uart`, `pwm`, `adc`,
   `include`, `HIGH`, and `LOW`: they are language syntax or fixed built-ins, not
   ordinary identifiers.
 - `HIGH` and `LOW` are predefined pin-state constants with fixed meanings

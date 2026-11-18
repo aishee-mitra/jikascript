@@ -85,6 +85,7 @@ func TestExamplesTranspileAndCompile(t *testing.T) {
 				filepath.Join(gpioInc, "periodic_ch32fun_stub.c"),
 				filepath.Join(gpioInc, "uart_stub.c"),
 				filepath.Join(gpioInc, "pwm_stub.c"),
+				filepath.Join(gpioInc, "adc_stub.c"),
 				"-o", binary)
 			output, err := cmd.CombinedOutput()
 			if err != nil {

@@ -823,6 +823,11 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string, functionArity map[
 						return fmt.Errorf("line %d:%d: unsupported pwm method '%s'", node.Pos.Line, node.Pos.Column, node.Field)
 					}
 				}
+				if peripheralKindOf(kind) == "adc" {
+					if !ch32fun.IsValidADCMethod(node.Field) {
+						return fmt.Errorf("line %d:%d: unsupported adc method '%s'", node.Pos.Line, node.Pos.Column, node.Field)
+					}
+				}
 				if isArrayBinding(kind) {
 					if node.Field != "length" {
 						return fmt.Errorf("line %d:%d: unsupported array property '%s'", node.Pos.Line, node.Pos.Column, node.Field)
@@ -1128,6 +1133,20 @@ func classifyBinding(baseKind string, declaredType string, declaredCapacity int,
 			}
 			pinName.CanonicalValue = ch32fun.NormalizePin(pinName.Value)
 			return "pwm-" + baseKind, nil
+		}
+		if fn, ok := call.Function.(*ast.Identifier); ok && fn.Name == "adc" {
+			if len(call.Args) != 1 {
+				return "", fmt.Errorf("adc() expects exactly one argument")
+			}
+			pinName, ok := call.Args[0].(*ast.StringLiteral)
+			if !ok {
+				return "", fmt.Errorf("adc() argument must be a string literal")
+			}
+			if !ch32fun.IsValidADCPin(pinName.Value) {
+				return "", fmt.Errorf("unknown adc pin %q", pinName.Value)
+			}
+			pinName.CanonicalValue = ch32fun.NormalizePin(pinName.Value)
+			return "adc-" + baseKind, nil
 		}
 	}
 	resolvedType := declaredType
@@ -1509,7 +1528,7 @@ func isNumericType(t string) bool {
 
 func builtin(name string) bool {
 	switch name {
-	case "pin", "uart", "pwm", "scheduler", "HIGH", "LOW":
+	case "pin", "uart", "pwm", "adc", "scheduler", "HIGH", "LOW":
 		return true
 	default:
 		return false

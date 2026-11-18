@@ -173,6 +173,8 @@ var runtimeFiles = []struct {
 	{source: "targets/ch32fun/runtime/uart.h", destination: "include/uart.h"},
 	{source: "targets/ch32fun/runtime/pwm.c", destination: "src/runtime/pwm.c"},
 	{source: "targets/ch32fun/runtime/pwm.h", destination: "include/pwm.h"},
+	{source: "targets/ch32fun/runtime/adc.c", destination: "src/runtime/adc.c"},
+	{source: "targets/ch32fun/runtime/adc.h", destination: "include/adc.h"},
 }
 
 func copyFile(source, destination string) error {

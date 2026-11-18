@@ -505,6 +505,32 @@ led.setFrequency(1000);`)
 	}
 }
 
+func TestGenerateEmitsADCCalls(t *testing.T) {
+	program, err := parser.ParseProgram(`const sensor = adc(" pd4 ");
+let value = sensor.read();`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := checker.Check(program); err != nil {
+		t.Fatalf("check error: %v", err)
+	}
+	out, err := Generate(program)
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+	for _, want := range []string{
+		`js_sensor = adc_open(JIKA_PIN_PD4);`,
+		`js_value = adc_read(js_sensor);`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in generated C, got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `" pd4 "`) {
+		t.Fatalf("expected raw adc pin literal to be replaced by canonical form, got:\n%s", out)
+	}
+}
+
 func TestGenerateGuardsTaskRegistration(t *testing.T) {
 	program, err := parser.ParseProgram(`task("blink", 1000, () => { });`)
 	if err != nil {

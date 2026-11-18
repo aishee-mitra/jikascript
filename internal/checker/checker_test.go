@@ -248,6 +248,62 @@ func TestCheckRejectsPWMMethodArity(t *testing.T) {
 	}
 }
 
+func TestCheckAcceptsADC(t *testing.T) {
+	for _, source := range []string{
+		`const sensor = adc("PD4");`,
+		`const sensor = adc(" pd4 ");`,
+		`const sensor = adc("PD4"); let value = sensor.read();`,
+	} {
+		program, err := parser.ParseProgram(source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", source, err)
+		}
+		if err := Check(program); err != nil {
+			t.Fatalf("expected %q to pass check, got %v", source, err)
+		}
+	}
+}
+
+func TestCheckRejectsInvalidADC(t *testing.T) {
+	cases := []struct {
+		source string
+		want   string
+	}{
+		{`const sensor = adc("PC1");`, "unknown adc pin"},
+		{`const sensor = adc("PD4", "PD5");`, "adc() expects exactly one argument"},
+		{`const sensor = adc(1);`, "adc() argument must be a string literal"},
+	}
+	for _, tc := range cases {
+		program, err := parser.ParseProgram(tc.source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", tc.source, err)
+		}
+		if err := Check(program); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("expected %q for %q, got %v", tc.want, tc.source, err)
+		}
+	}
+}
+
+func TestCheckRejectsUnsupportedADCMethod(t *testing.T) {
+	program, err := parser.ParseProgram(`const sensor = adc("PD4"); sensor.write(1);`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "unsupported adc method") {
+		t.Fatalf("expected unsupported adc method error, got %v", err)
+	}
+}
+
+func TestCheckRejectsADCMethodArity(t *testing.T) {
+	program, err := parser.ParseProgram(`const sensor = adc("PD4"); sensor.read(1);`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "read() expects no arguments") {
+		t.Fatalf("expected adc read arity error, got %v", err)
+	}
+}
+
 func TestCheckRejectsDuplicateTaskNames(t *testing.T) {
 	program, err := parser.ParseProgram(`task("blink", 1000, () => { }); task("blink", 500, () => { });`)
 	if err != nil {

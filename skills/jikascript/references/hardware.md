@@ -83,10 +83,23 @@ and TIM2 partial remap 2 channels `PC1`, `PD3`, `PC0`, `PD7`. TIM2 is remapped s
 v1. A pwm object supports exactly two methods: `set(duty)` (0-100 percent) and
 `setFrequency(hz)` (default 1000 Hz).
 
+## ADC
+
+`adc()` binds an analog input. It takes one string-literal pin argument.
+
+```javascript
+const sensor = adc("PD4");
+let value = sensor.read();
+```
+
+Supported pins on CH32V003 (channels A0-A7): `PA2`, `PA1`, `PC4`, `PD2`, `PD3`,
+`PD5`, `PD6`, `PD4`. An adc object supports exactly one method: `read()`, which
+returns the raw 10-bit sample (0-1023).
+
 ## Reserved names
 
-`pin`, `uart`, `pwm`, `HIGH`, and `LOW` are reserved or special built-ins; do not
-use them as variable names.
+`pin`, `uart`, `pwm`, `adc`, `HIGH`, and `LOW` are reserved or special built-ins;
+do not use them as variable names.
 
 ## Complete interactive example: button toggle
 
