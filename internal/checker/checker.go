@@ -740,9 +740,11 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string, functionArity map[
 	case *ast.CallExpr:
 		if sel, ok := node.Function.(*ast.SelectorExpr); ok {
 			if ident, ok := sel.Object.(*ast.Identifier); ok {
-				if binding, exists := lookup(scopeStack, ident.Name); exists && isPinBinding(binding) {
-					if err := checkPinMethodArity(sel.Field, len(node.Args), node.Pos); err != nil {
-						return err
+				if binding, exists := lookup(scopeStack, ident.Name); exists {
+					if family := peripheralKindOf(binding); family != "" {
+						if err := checkPeripheralMethodArity(family, sel.Field, len(node.Args), node.Pos); err != nil {
+							return err
+						}
 					}
 				}
 				if binding, exists := lookup(scopeStack, ident.Name); exists && isArrayBinding(binding) {
@@ -809,6 +811,11 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string, functionArity map[
 				if isPinBinding(kind) {
 					if !ch32fun.IsValidPinMethod(node.Field) {
 						return fmt.Errorf("line %d:%d: unsupported pin method '%s'", node.Pos.Line, node.Pos.Column, node.Field)
+					}
+				}
+				if peripheralKindOf(kind) == "uart" {
+					if !ch32fun.IsValidUARTMethod(node.Field) {
+						return fmt.Errorf("line %d:%d: unsupported uart method '%s'", node.Pos.Line, node.Pos.Column, node.Field)
 					}
 				}
 				if isArrayBinding(kind) {
@@ -1084,6 +1091,25 @@ func classifyBinding(baseKind string, declaredType string, declaredCapacity int,
 			pinName.CanonicalValue = ch32fun.NormalizePin(pinName.Value)
 			return "pin-" + baseKind, nil
 		}
+		if fn, ok := call.Function.(*ast.Identifier); ok && fn.Name == "uart" {
+			if len(call.Args) != 2 {
+				return "", fmt.Errorf("uart() expects exactly two arguments (tx, rx)")
+			}
+			txName, ok := call.Args[0].(*ast.StringLiteral)
+			if !ok {
+				return "", fmt.Errorf("uart() tx argument must be a string literal")
+			}
+			rxName, ok := call.Args[1].(*ast.StringLiteral)
+			if !ok {
+				return "", fmt.Errorf("uart() rx argument must be a string literal")
+			}
+			if !ch32fun.IsValidUARTTuple(txName.Value, rxName.Value) {
+				return "", fmt.Errorf("unsupported uart pin pair %q, %q", txName.Value, rxName.Value)
+			}
+			txName.CanonicalValue = ch32fun.NormalizePin(txName.Value)
+			rxName.CanonicalValue = ch32fun.NormalizePin(rxName.Value)
+			return "uart-" + baseKind, nil
+		}
 	}
 	resolvedType := declaredType
 	if resolvedType == "" {
@@ -1136,18 +1162,56 @@ func isPinBinding(kind string) bool {
 	return strings.HasPrefix(kind, "pin-")
 }
 
-// checkPinMethodArity validates the argument count for a pin method call.
-// The code generator emits a fixed C call per method, so an unexpected number
-// of arguments would either be silently dropped or produce invalid C.
-func checkPinMethodArity(method string, argc int, pos ast.Position) error {
-	switch method {
-	case "output", "input", "toggle", "read":
-		if argc != 0 {
-			return fmt.Errorf("line %d:%d: %s() expects no arguments, got %d", pos.Line, pos.Column, method, argc)
+// peripheralKindOf extracts the peripheral family from a binding kind, so
+// "pin-const" -> "pin" and "uart-var" -> "uart". It returns "" for bindings
+// that are not peripheral objects (scalars, arrays, and records).
+func peripheralKindOf(kind string) string {
+	for _, family := range []string{"pin", "uart", "pwm", "adc"} {
+		if strings.HasPrefix(kind, family+"-") {
+			return family
 		}
-	case "write":
-		if argc > 1 {
-			return fmt.Errorf("line %d:%d: write() expects at most one argument, got %d", pos.Line, pos.Column, argc)
+	}
+	return ""
+}
+
+// checkPeripheralMethodArity validates the argument count for a peripheral
+// method call. The code generator emits a fixed C call per method, so an
+// unexpected number of arguments would either be silently dropped or produce
+// invalid C.
+func checkPeripheralMethodArity(family, method string, argc int, pos ast.Position) error {
+	switch family {
+	case "pin":
+		switch method {
+		case "output", "input", "toggle", "read":
+			if argc != 0 {
+				return fmt.Errorf("line %d:%d: %s() expects no arguments, got %d", pos.Line, pos.Column, method, argc)
+			}
+		case "write":
+			if argc > 1 {
+				return fmt.Errorf("line %d:%d: write() expects at most one argument, got %d", pos.Line, pos.Column, argc)
+			}
+		}
+	case "uart":
+		switch method {
+		case "write", "println":
+			if argc != 1 {
+				return fmt.Errorf("line %d:%d: %s() expects exactly one argument, got %d", pos.Line, pos.Column, method, argc)
+			}
+		case "read":
+			if argc != 0 {
+				return fmt.Errorf("line %d:%d: read() expects no arguments, got %d", pos.Line, pos.Column, argc)
+			}
+		}
+	case "pwm":
+		switch method {
+		case "set", "setFrequency":
+			if argc != 1 {
+				return fmt.Errorf("line %d:%d: %s() expects exactly one argument, got %d", pos.Line, pos.Column, method, argc)
+			}
+		}
+	case "adc":
+		if method == "read" && argc != 0 {
+			return fmt.Errorf("line %d:%d: read() expects no arguments, got %d", pos.Line, pos.Column, argc)
 		}
 	}
 	return nil
@@ -1426,7 +1490,7 @@ func isNumericType(t string) bool {
 
 func builtin(name string) bool {
 	switch name {
-	case "pin", "scheduler", "HIGH", "LOW":
+	case "pin", "uart", "scheduler", "HIGH", "LOW":
 		return true
 	default:
 		return false

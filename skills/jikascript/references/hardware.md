@@ -48,10 +48,28 @@ Treat them as built-in logic constants, not ordinary mutable user variables.
 Compare reads with the strict equality operators (`==` / `===`), which are
 non-coercing.
 
+## UART
+
+`uart()` binds the CH32V003 USART1 peripheral. It takes two string-literal
+arguments, TX then RX, and the compiler rejects any pair other than the default
+`uart("PD5", "PD6")`.
+
+```javascript
+const serial = uart("PD5", "PD6");
+
+serial.write("hello");
+serial.println("ok");
+let ch = serial.read();
+```
+
+The configuration is fixed at 8N1, 115200 baud. A uart object supports exactly
+three methods: `write(text)`, `println(text)` (adds a CRLF line ending), and
+`read()`. `read()` is non-blocking and returns `-1` when no byte is available.
+
 ## Reserved names
 
-`pin`, `HIGH`, and `LOW` are reserved or special built-ins; do not use them as
-variable names.
+`pin`, `uart`, `HIGH`, and `LOW` are reserved or special built-ins; do not use
+them as variable names.
 
 ## Complete interactive example: button toggle
 
@@ -73,8 +91,8 @@ scheduler.start();
 
 ## Future peripherals (planned, not in v0.1)
 
-ADC, PWM, UART, SPI, I2C, and hardware timers are planned extensions, not
-required for the first compiler milestone.
+ADC, PWM, SPI, I2C, and hardware timers are planned extensions, not required for
+the first compiler milestone.
 
 ## Hardware abstraction layers
 

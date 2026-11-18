@@ -1,0 +1,12 @@
+// UART serial output on the CH32V003 USART1 default pins (TX=PD5, RX=PD6).
+const serial = uart("PD5", "PD6");
+
+serial.println("jikascript uart online");
+
+task("uart_poll", 200, () => {
+    if (serial.read() >= 0) {
+        serial.println("byte received");
+    }
+});
+
+scheduler.start();

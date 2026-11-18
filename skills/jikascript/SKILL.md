@@ -34,6 +34,7 @@ compiler.
 - Building firmware: `jikascript build`, `transpile`, `check`, `flash`.
 - Working with the cooperative periodic scheduler and task syntax.
 - Using GPIO hardware abstration (`pin("PC1")`).
+- Using the UART peripheral (`uart("PD5", "PD6")`).
 - Reviewing or hand-editing transpiled C before flashing.
 
 ## Quick Start
@@ -101,6 +102,15 @@ const device = { name: "sensor-1", pin: 3, temperature: 24.5, enabled: true };
 // File includes (compile-time textual splice)
 include "helpers.jika";
 
+// GPIO
+const led = pin("PC1");
+led.output();
+led.write(HIGH);
+
+// UART on the CH32V003 USART1 default pins (TX=PD5, RX=PD6)
+const serial = uart("PD5", "PD6");
+serial.println("hello");
+
 // Cooperative periodic tasks
 task("heartbeat", 500, () => { led.toggle(); });
 
@@ -117,7 +127,7 @@ Detailed, exhaustive references available on demand:
 - `references/objects.md` — Static object records: declaration, struct lowering, mutable properties, compile-time safety.
 - `references/tasks.md` — Cooperative periodic tasks and the scheduler model.
 - `references/scheduler.md` — Standalone pure-C periodic scheduler API, scheduling rules, and timer adapter.
-- `references/hardware.md` — GPIO hardware API (`pin`, `output`, `input`, `read`, `write`, `toggle`, `HIGH`, `LOW`).
+- `references/hardware.md` — GPIO and UART hardware API (`pin`, `uart`, `output`, `input`, `read`, `write`, `println`, `toggle`, `HIGH`, `LOW`).
 - `references/includes.md` — Multi-file `include` splicing rules and example.
 - `references/cli.md` — Install, build, CLI commands, flags, board/env selection, optimization, PlatformIO artifacts.
 - `references/example-programs.md` — Complete end-to-end example programs.
@@ -129,8 +139,8 @@ Detailed, exhaustive references available on demand:
   and memory-mapped data.
 - `==` and `===` are both strict and non-coercing. Mixed-type comparisons are
   compile-time errors — never compare a `number` to a `string`.
-- Reserve the words `task`, `scheduler`, `start`, `pin`, `include`, `HIGH`, and
-  `LOW`: they are language syntax or fixed GPIO state constants, not ordinary
+- Reserve the words `task`, `scheduler`, `start`, `pin`, `uart`, `include`,
+  `HIGH`, and `LOW`: they are language syntax or fixed built-ins, not ordinary
   identifiers.
 - `HIGH` and `LOW` are predefined pin-state constants with fixed meanings
   `HIGH == 1` and `LOW == 0`; do not shadow or rebind them in user code.

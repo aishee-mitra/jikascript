@@ -737,13 +737,37 @@ The backend must validate pin names and supported operations.
 
 Do not assume all MCUs have identical pin names or peripheral capabilities.
 
-## 7.2 Future peripherals
+## 7.2 UART
+
+Example:
+
+```javascript
+const serial = uart("PD5", "PD6");
+
+serial.write("hello");
+serial.println("ok");
+let ch = serial.read();
+```
+
+`uart()` takes two string-literal pin arguments: TX then RX. The CH32V003
+backend supports the default USART1 pair `uart("PD5", "PD6")`; the compiler
+rejects any other pair. The configuration is fixed at 8N1, 115200 baud.
+
+A uart object supports exactly three methods:
+
+- `write(text)` transmits a string.
+- `println(text)` transmits a string followed by `\r\n`.
+- `read()` returns the next received byte as an `int`, or `-1` when no byte is
+  available. Reads are non-blocking.
+
+The backend must validate the pin pair and supported methods.
+
+## 7.3 Future peripherals
 
 The following are planned extensions:
 
 - ADC
 - PWM
-- UART
 - SPI
 - I2C
 - Hardware timers

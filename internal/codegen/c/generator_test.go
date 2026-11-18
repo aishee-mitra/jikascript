@@ -447,6 +447,36 @@ led.output();`)
 	}
 }
 
+func TestGenerateEmitsUARTCalls(t *testing.T) {
+	program, err := parser.ParseProgram(`const serial = uart(" pd5 ", "PD6");
+serial.write("hi");
+serial.println("ok");
+let ch = serial.read();`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := checker.Check(program); err != nil {
+		t.Fatalf("check error: %v", err)
+	}
+	out, err := Generate(program)
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+	for _, want := range []string{
+		`js_serial = uart_open(JIKA_PIN_PD5, JIKA_PIN_PD6);`,
+		`uart_write(js_serial, "hi");`,
+		`uart_println(js_serial, "ok");`,
+		`js_ch = uart_read(js_serial);`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in generated C, got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `" pd5 "`) {
+		t.Fatalf("expected raw uart pin literal to be replaced by canonical form, got:\n%s", out)
+	}
+}
+
 func TestGenerateGuardsTaskRegistration(t *testing.T) {
 	program, err := parser.ParseProgram(`task("blink", 1000, () => { });`)
 	if err != nil {

@@ -111,6 +111,77 @@ func TestCheckAcceptsPinMethodArity(t *testing.T) {
 	}
 }
 
+func TestCheckAcceptsUART(t *testing.T) {
+	for _, source := range []string{
+		`const serial = uart("PD5", "PD6");`,
+		`const serial = uart(" pd5 ", "pd6");`,
+		`const serial = uart("PD5", "PD6"); serial.write("hi");`,
+		`const serial = uart("PD5", "PD6"); serial.println("ok");`,
+		`const serial = uart("PD5", "PD6"); let ch = serial.read();`,
+	} {
+		program, err := parser.ParseProgram(source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", source, err)
+		}
+		if err := Check(program); err != nil {
+			t.Fatalf("expected %q to pass check, got %v", source, err)
+		}
+	}
+}
+
+func TestCheckRejectsInvalidUART(t *testing.T) {
+	cases := []struct {
+		source string
+		want   string
+	}{
+		{`const serial = uart("PA2", "PA1");`, "unsupported uart pin pair"},
+		{`const serial = uart("PD6", "PD5");`, "unsupported uart pin pair"},
+		{`const serial = uart("PD5");`, "uart() expects exactly two arguments"},
+		{`const serial = uart("PD5", "PD6", "PC1");`, "uart() expects exactly two arguments"},
+		{`const serial = uart("PD5", 1);`, "rx argument must be a string literal"},
+	}
+	for _, tc := range cases {
+		program, err := parser.ParseProgram(tc.source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", tc.source, err)
+		}
+		if err := Check(program); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("expected %q for %q, got %v", tc.want, tc.source, err)
+		}
+	}
+}
+
+func TestCheckRejectsUnsupportedUARTMethod(t *testing.T) {
+	program, err := parser.ParseProgram(`const serial = uart("PD5", "PD6"); serial.print("x");`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "unsupported uart method") {
+		t.Fatalf("expected unsupported uart method error, got %v", err)
+	}
+}
+
+func TestCheckRejectsUARTMethodArity(t *testing.T) {
+	cases := []struct {
+		source string
+		want   string
+	}{
+		{`const serial = uart("PD5", "PD6"); serial.write();`, "write() expects exactly one argument"},
+		{`const serial = uart("PD5", "PD6"); serial.write("a", "b");`, "write() expects exactly one argument"},
+		{`const serial = uart("PD5", "PD6"); serial.println();`, "println() expects exactly one argument"},
+		{`const serial = uart("PD5", "PD6"); serial.read(1);`, "read() expects no arguments"},
+	}
+	for _, tc := range cases {
+		program, err := parser.ParseProgram(tc.source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", tc.source, err)
+		}
+		if err := Check(program); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("expected %q for %q, got %v", tc.want, tc.source, err)
+		}
+	}
+}
+
 func TestCheckRejectsDuplicateTaskNames(t *testing.T) {
 	program, err := parser.ParseProgram(`task("blink", 1000, () => { }); task("blink", 500, () => { });`)
 	if err != nil {

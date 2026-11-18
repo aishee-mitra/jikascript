@@ -699,7 +699,7 @@ func (p *Parser) parsePrimary() (ast.Expr, error) {
 		p.next()
 		return lit, nil
 	case lexer.KEYWORD:
-		if p.cur.Literal == "pin" || p.cur.Literal == "scheduler" || p.cur.Literal == "start" {
+		if p.cur.Literal == "pin" || p.cur.Literal == "uart" || p.cur.Literal == "scheduler" || p.cur.Literal == "start" {
 			ident := &ast.Identifier{Name: p.cur.Literal, Pos: ast.Position{Line: p.cur.Line, Column: p.cur.Column}}
 			p.next()
 			return ident, nil
