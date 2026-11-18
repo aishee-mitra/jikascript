@@ -1,0 +1,43 @@
+# Line-ending policy: store LF in the repository, check out natively.
+#
+# Git normalizes text files to LF on commit and converts them to the
+# platform's native endings on checkout, so the same file can be edited with
+# LF on Unix and CRLF on Windows without producing whole-file diffs.
+* text=auto
+
+# Explicit text types, so detection is never relied upon.
+*.go     text
+*.c      text
+*.h      text
+*.md     text
+*.jika   text
+*.yml    text
+*.yaml   text
+*.json   text
+*.toml   text
+*.html   text
+*.py     text
+*.sh     text eol=lf
+justfile text
+go.mod   text
+
+# Windows-only scripts keep CRLF on checkout.
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf
+
+# Binary assets are never normalized or diffed as text.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.pdf    binary
+*.bin    binary
+*.hex    binary
+*.elf    binary
+*.o      binary
+*.a      binary
+*.lib    binary
+*.zip    binary
+*.gz     binary
