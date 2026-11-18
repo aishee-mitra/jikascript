@@ -762,12 +762,35 @@ A uart object supports exactly three methods:
 
 The backend must validate the pin pair and supported methods.
 
-## 7.3 Future peripherals
+## 7.3 PWM
+
+Example:
+
+```javascript
+const led = pwm("PC1");
+
+led.set(50);
+led.setFrequency(1000);
+```
+
+`pwm()` takes one string-literal pin argument. The CH32V003 backend supports the
+TIM1 default channels (PD2, PA1, PC3, PC4) and the TIM2 partial remap 2 channels
+(PC1, PD3, PC0, PD7); the compiler rejects any other pin.
+
+A pwm object supports exactly two methods:
+
+- `set(duty)` sets the duty cycle as a percentage from 0 to 100.
+- `setFrequency(hz)` optionally sets the PWM frequency in hertz. The default is
+  1000 Hz.
+
+The backend must validate the timer-capable pin and supported methods. PD7 is
+the NRST pin, so using it requires disabling NRST on the target.
+
+## 7.4 Future peripherals
 
 The following are planned extensions:
 
 - ADC
-- PWM
 - SPI
 - I2C
 - Hardware timers

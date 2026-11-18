@@ -477,6 +477,34 @@ let ch = serial.read();`)
 	}
 }
 
+func TestGenerateEmitsPWMCalls(t *testing.T) {
+	program, err := parser.ParseProgram(`const led = pwm(" pc1 ");
+led.set(50);
+led.setFrequency(1000);`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := checker.Check(program); err != nil {
+		t.Fatalf("check error: %v", err)
+	}
+	out, err := Generate(program)
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+	for _, want := range []string{
+		`js_led = pwm_open(JIKA_PIN_PC1);`,
+		`pwm_set(js_led, 50);`,
+		`pwm_set_frequency(js_led, 1000);`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in generated C, got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `" pc1 "`) {
+		t.Fatalf("expected raw pwm pin literal to be replaced by canonical form, got:\n%s", out)
+	}
+}
+
 func TestGenerateGuardsTaskRegistration(t *testing.T) {
 	program, err := parser.ParseProgram(`task("blink", 1000, () => { });`)
 	if err != nil {

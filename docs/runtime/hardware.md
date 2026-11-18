@@ -94,6 +94,36 @@ name, or the wrong number of arguments, is a compile error.
 
 ---
 
+## PWM
+
+`pwm()` binds a timer channel as a single PWM output. It takes one **string
+literal** pin argument.
+
+```javascript
+const led = pwm("PC1");
+
+led.set(50);           // 50% duty cycle
+led.setFrequency(1000); // optional, default 1000 Hz
+```
+
+Supported pins on CH32V003:
+
+- TIM1 default channels: `PD2`, `PA1`, `PC3`, `PC4`
+- TIM2 partial remap 2 channels: `PC1`, `PD3`, `PC0`, `PD7`
+
+TIM2 is programmed into partial remap 2 so `PC1` is available. The trade-off is
+that `PD4` (TIM2 channel 1 in the default mapping) is not a PWM pin in v1. `PD7`
+is the NRST pin, so using it requires disabling NRST on the target.
+
+A pwm object supports exactly two methods:
+
+| Method | Arguments | Description |
+| --- | --- | --- |
+| `.set(duty)` | 0–100 | Set the duty cycle as a percentage. |
+| `.setFrequency(hz)` | hertz | Set the PWM frequency (default 1000 Hz). |
+
+---
+
 ## Example: Button-Controlled LED
 
 Poll a push-button every 20 ms and drive an LED to match its state:

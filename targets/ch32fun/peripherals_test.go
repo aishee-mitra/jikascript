@@ -29,13 +29,13 @@ func TestIsValidUARTMethod(t *testing.T) {
 }
 
 func TestIsValidPWMPin(t *testing.T) {
-	for _, pin := range []string{"PD2", "PA1", "PC3", "PC4", "PD4", "PD3", "PC0", "PD7"} {
+	for _, pin := range []string{"PD2", "PA1", "PC3", "PC4", "PC1", "PD3", "PC0", "PD7"} {
 		if !IsValidPWMPin(pin) {
 			t.Fatalf("expected %s to be a valid pwm pin", pin)
 		}
 	}
-	if IsValidPWMPin("PC1") {
-		t.Fatal("expected PC1 (remap-only) to be invalid in v1")
+	if IsValidPWMPin("PD4") {
+		t.Fatal("expected PD4 (default TIM2 CH1) to be invalid while TIM2 is remapped")
 	}
 	if IsValidPWMPin("PD1") {
 		t.Fatal("expected PD1 (complementary channel) to be invalid in v1")

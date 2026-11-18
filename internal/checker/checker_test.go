@@ -182,6 +182,72 @@ func TestCheckRejectsUARTMethodArity(t *testing.T) {
 	}
 }
 
+func TestCheckAcceptsPWM(t *testing.T) {
+	for _, source := range []string{
+		`const led = pwm("PC1");`,
+		`const led = pwm(" pc1 ");`,
+		`const led = pwm("PC1"); led.set(50);`,
+		`const led = pwm("PC1"); led.setFrequency(1000);`,
+	} {
+		program, err := parser.ParseProgram(source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", source, err)
+		}
+		if err := Check(program); err != nil {
+			t.Fatalf("expected %q to pass check, got %v", source, err)
+		}
+	}
+}
+
+func TestCheckRejectsInvalidPWM(t *testing.T) {
+	cases := []struct {
+		source string
+		want   string
+	}{
+		{`const led = pwm("PD4");`, "unknown pwm pin"},
+		{`const led = pwm("PC1", "PC2");`, "pwm() expects exactly one argument"},
+		{`const led = pwm(1);`, "pwm() argument must be a string literal"},
+	}
+	for _, tc := range cases {
+		program, err := parser.ParseProgram(tc.source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", tc.source, err)
+		}
+		if err := Check(program); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("expected %q for %q, got %v", tc.want, tc.source, err)
+		}
+	}
+}
+
+func TestCheckRejectsUnsupportedPWMMethod(t *testing.T) {
+	program, err := parser.ParseProgram(`const led = pwm("PC1"); led.pulse();`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := Check(program); err == nil || !strings.Contains(err.Error(), "unsupported pwm method") {
+		t.Fatalf("expected unsupported pwm method error, got %v", err)
+	}
+}
+
+func TestCheckRejectsPWMMethodArity(t *testing.T) {
+	cases := []struct {
+		source string
+		want   string
+	}{
+		{`const led = pwm("PC1"); led.set();`, "set() expects exactly one argument"},
+		{`const led = pwm("PC1"); led.setFrequency();`, "setFrequency() expects exactly one argument"},
+	}
+	for _, tc := range cases {
+		program, err := parser.ParseProgram(tc.source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", tc.source, err)
+		}
+		if err := Check(program); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("expected %q for %q, got %v", tc.want, tc.source, err)
+		}
+	}
+}
+
 func TestCheckRejectsDuplicateTaskNames(t *testing.T) {
 	program, err := parser.ParseProgram(`task("blink", 1000, () => { }); task("blink", 500, () => { });`)
 	if err != nil {

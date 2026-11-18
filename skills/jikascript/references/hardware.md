@@ -66,10 +66,27 @@ The configuration is fixed at 8N1, 115200 baud. A uart object supports exactly
 three methods: `write(text)`, `println(text)` (adds a CRLF line ending), and
 `read()`. `read()` is non-blocking and returns `-1` when no byte is available.
 
+## PWM
+
+`pwm()` binds a timer channel as a single PWM output. It takes one string-literal
+pin argument.
+
+```javascript
+const led = pwm("PC1");
+led.set(50);
+led.setFrequency(1000);
+```
+
+Supported pins on CH32V003: TIM1 default channels `PD2`, `PA1`, `PC3`, `PC4`,
+and TIM2 partial remap 2 channels `PC1`, `PD3`, `PC0`, `PD7`. TIM2 is remapped so
+`PC1` is available; `PD4` (default TIM2 channel 1) is therefore not a PWM pin in
+v1. A pwm object supports exactly two methods: `set(duty)` (0-100 percent) and
+`setFrequency(hz)` (default 1000 Hz).
+
 ## Reserved names
 
-`pin`, `uart`, `HIGH`, and `LOW` are reserved or special built-ins; do not use
-them as variable names.
+`pin`, `uart`, `pwm`, `HIGH`, and `LOW` are reserved or special built-ins; do not
+use them as variable names.
 
 ## Complete interactive example: button toggle
 

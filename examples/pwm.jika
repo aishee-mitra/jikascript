@@ -1,0 +1,19 @@
+// PWM dimming on PC1 (TIM2 channel 1 in partial remap 2).
+const led = pwm("PC1");
+
+let duty = 0;
+let step = 5;
+
+task("fade", 20, () => {
+    duty = duty + step;
+    if (duty > 100) {
+        duty = 100;
+        step = -5;
+    } else if (duty < 0) {
+        duty = 0;
+        step = 5;
+    }
+    led.set(duty);
+});
+
+scheduler.start();

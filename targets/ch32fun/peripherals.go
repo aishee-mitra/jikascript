@@ -32,17 +32,18 @@ func IsValidUARTMethod(method string) bool {
 	}
 }
 
-// pwmPins lists the pins that can source a PWM output. The mapping uses the
-// default (no-remap) timer alternate functions:
+// pwmPins lists the pins that can source a PWM output:
 //
-//	TIM1 CH1=PD2, CH2=PA1, CH3=PC3, CH4=PC4
-//	TIM2 CH1=PD4, CH2=PD3, CH3=PC0, CH4=PD7
+//	TIM1 no-remap        CH1=PD2, CH2=PA1, CH3=PC3, CH4=PC4
+//	TIM2 partial remap 2 CH1=PC1, CH2=PD3, CH3=PC0, CH4=PD7
 //
-// Pins that need a timer remap (for example PC1) are intentionally excluded
-// from v1 so the backend never depends on AFIO remap state.
+// TIM2 is programmed into partial remap 2 so PC1 is available as a PWM output
+// (the handoff's example pin). The trade-off is that PD4, TIM2 CH1 in the
+// default mapping, is not a PWM pin in v1. PD7 is the NRST pin, so using it
+// requires disabling NRST on the target.
 var pwmPins = map[string]struct{}{
 	"PD2": {}, "PA1": {}, "PC3": {}, "PC4": {},
-	"PD4": {}, "PD3": {}, "PC0": {}, "PD7": {},
+	"PC1": {}, "PD3": {}, "PC0": {}, "PD7": {},
 }
 
 // IsValidPWMPin reports whether the CH32V003 target supports PWM output on the
