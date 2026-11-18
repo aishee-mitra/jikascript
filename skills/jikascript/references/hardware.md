@@ -96,6 +96,18 @@ Supported pins on CH32V003 (channels A0-A7): `PA2`, `PA1`, `PC4`, `PD2`, `PD3`,
 `PD5`, `PD6`, `PD4`. An adc object supports exactly one method: `read()`, which
 returns the raw 10-bit sample (0-1023).
 
+## Timer and clock assumptions
+
+The scheduler (SysTick, 1 ms tick) and PWM (TIM1/TIM2) both derive their timing
+from the core clock selected in `funconfig.h`. PWM frequency is
+`core_clock / ((PSC + 1) * 1000)`; the scheduler tick comes from `DELAY_MS_TIME`.
+If `FUNCONF_SYSTEM_CORE_CLOCK` does not match the actual core clock, both are
+scaled by the same error.
+
+Limits: PWM duty is 0-100 percent over a fixed 1000-step period; the frequency
+range is bounded by the 16-bit prescaler; `PD7` needs NRST disabled; `PD4` is
+not a PWM pin because TIM2 is remapped for `PC1`.
+
 ## Reserved names
 
 `pin`, `uart`, `pwm`, `adc`, `HIGH`, and `LOW` are reserved or special built-ins;

@@ -12,6 +12,12 @@
  *
  * Duty is a percentage (0..100) and the period is fixed at JIKA_PWM_STEPS
  * timer ticks, so a duty of 50 writes half the period to the compare register.
+ *
+ * Timing contract: the timer clock is the core clock, the same source the
+ * SysTick scheduler uses (DELAY_MS_TIME in periodic_ch32fun.c). Both are
+ * derived from FUNCONF_SYSTEM_CORE_CLOCK, so scheduler milliseconds and PWM
+ * frequencies stay aligned as long as that macro matches the actual core
+ * clock selected in funconfig.h.
  */
 
 #define JIKA_PWM_STEPS 1000U

@@ -145,6 +145,31 @@ An adc object supports exactly one method:
 
 ---
 
+## Timer and Clock Assumptions
+
+The cooperative scheduler and the PWM backend share one time base: the core
+clock selected in `funconfig.h`.
+
+- The scheduler runs from SysTick with a 1 ms tick (`periodic_millis()`,
+  `periodic_tick_ms()`); `periodic_ch32fun.c` derives the tick from
+  `DELAY_MS_TIME`.
+- PWM frequencies are derived from `FUNCONF_SYSTEM_CORE_CLOCK` with a fixed
+  period of 1000 timer ticks: `freq = core_clock / ((PSC + 1) * 1000)`.
+
+Both must agree on the actual core clock. If `funconfig.h` selects a clock that
+differs from `FUNCONF_SYSTEM_CORE_CLOCK`, scheduler milliseconds and PWM
+frequencies are scaled by the same error.
+
+### Limits
+
+- PWM duty is a percentage (0–100) with a fixed 1000-step period.
+- The PWM frequency range is bounded by the 16-bit prescaler; requests outside
+  that range are clamped.
+- `PD7` is PWM-capable but is also the NRST pin; disable NRST to use it.
+- `PD4` is not a PWM pin because TIM2 is remapped to expose `PC1`.
+
+---
+
 ## Example: Button-Controlled LED
 
 Poll a push-button every 20 ms and drive an LED to match its state:
