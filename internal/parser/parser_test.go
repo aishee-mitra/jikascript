@@ -133,3 +133,17 @@ func TestParseIncludeMissingSemicolonRejected(t *testing.T) {
 		t.Fatalf("expected error for missing semicolon, got nil")
 	}
 }
+
+func TestParsePeripheralConstructors(t *testing.T) {
+	program, err := ParseProgram(`const serial = uart("PD5", "PD6");
+const dimmer = pwm("PC1");
+const sensor = adc("PD4");
+const led = pin("PC1");
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(program.Statements) != 4 {
+		t.Fatalf("expected 4 statements, got %d", len(program.Statements))
+	}
+}
