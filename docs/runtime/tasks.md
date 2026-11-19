@@ -99,4 +99,4 @@ after regenerating the project.
 - **Timer Driven:** A clean 1 ms hardware timer advances the scheduler clock. Your application callbacks run in main context, safely away from interrupt restrictions.
 - **Zero Memory Allocation:** Task slots are allocated statically at compile time (default 8 tasks, customizable).
 
-Next, let's look at [GPIO & Hardware](hardware.md).
+Next, let's look at [GPIO](gpio.md).

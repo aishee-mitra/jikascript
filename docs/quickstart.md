@@ -156,4 +156,6 @@ Now that you've seen the basics, let's explore the language features in detail:
 - Learn about [Variables & Types](language/variables-and-types.md)
 - Write [Functions](language/functions.md) with smart type inference
 - Work with [Objects & Records](language/objects.md) and [Arrays](language/arrays.md)
-- Drive [GPIO, UART, PWM, and ADC](runtime/hardware.md) peripherals
+- Drive [GPIO, UART, PWM, and ADC](runtime/hardware.md) peripherals — see the
+  [GPIO](runtime/gpio.md), [UART](runtime/uart.md), [PWM](runtime/pwm.md), and
+  [ADC](runtime/adc.md) references
