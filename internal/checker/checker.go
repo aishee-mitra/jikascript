@@ -773,6 +773,16 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string, functionArity map[
 						return fmt.Errorf("line %d:%d: unsupported array method '%s'", node.Pos.Line, node.Pos.Column, sel.Field)
 					}
 				}
+			} else if family, ok := peripheralTempFamily(sel.Object); ok {
+				if !isValidPeripheralMethod(family, sel.Field) {
+					return fmt.Errorf("line %d:%d: unsupported %s method '%s'", node.Pos.Line, node.Pos.Column, family, sel.Field)
+				}
+				if err := checkPeripheralMethodArity(family, sel.Field, len(node.Args), node.Pos); err != nil {
+					return err
+				}
+				if err := checkPeripheralMethodType(family, sel.Field, node.Args, scopeStack, node.Pos); err != nil {
+					return err
+				}
 			}
 		}
 		if err := checkExpr(node.Function, scopeStack, functionArity); err != nil {
@@ -835,6 +845,9 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string, functionArity map[
 					if node.Field != "length" {
 						return fmt.Errorf("line %d:%d: unsupported array property '%s'", node.Pos.Line, node.Pos.Column, node.Field)
 					}
+				}
+				if scalarType, isScalar := scalarBindingType(kind); isScalar {
+					return fmt.Errorf("line %d:%d: '%s' has type %s and no properties or methods", node.Pos.Line, node.Pos.Column, ident.Name, scalarType)
 				}
 			}
 		}
@@ -1225,6 +1238,40 @@ func peripheralKindOf(kind string) string {
 		}
 	}
 	return ""
+}
+
+// peripheralTempFamily reports the peripheral family of a constructor call used
+// directly as a method receiver, e.g. pwm("PC1").set(50). It returns false for
+// any other expression.
+func peripheralTempFamily(expr ast.Expr) (string, bool) {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return "", false
+	}
+	ident, ok := call.Function.(*ast.Identifier)
+	if !ok {
+		return "", false
+	}
+	switch ident.Name {
+	case "pin", "uart", "pwm", "adc":
+		return ident.Name, true
+	}
+	return "", false
+}
+
+// isValidPeripheralMethod reports whether method belongs to the family's API.
+func isValidPeripheralMethod(family, method string) bool {
+	switch family {
+	case "pin":
+		return ch32fun.IsValidPinMethod(method)
+	case "uart":
+		return ch32fun.IsValidUARTMethod(method)
+	case "pwm":
+		return ch32fun.IsValidPWMMethod(method)
+	case "adc":
+		return ch32fun.IsValidADCMethod(method)
+	}
+	return false
 }
 
 // checkPeripheralMethodArity validates the argument count for a peripheral

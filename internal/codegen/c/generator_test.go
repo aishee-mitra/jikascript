@@ -43,7 +43,8 @@ func hostIncludeFlags(t *testing.T) []string {
 }
 
 func TestGenerateContainsMainAndTask(t *testing.T) {
-	program, err := parser.ParseProgram(`task("blink", 1000, () => {
+	program, err := parser.ParseProgram(`const led = pin("PC1");
+task("blink", 1000, () => {
     led.toggle();
 });
 `)
@@ -577,5 +578,44 @@ led.output();`, nil
 	}
 	if strings.Contains(out, "helpers.jika") {
 		t.Fatalf("generated C must not retain source include statements:\n%s", out)
+	}
+}
+
+func TestGenerateResolvesPeripheralConstructorReceivers(t *testing.T) {
+	program, err := parser.ParseProgram(`pwm("PC1").set(50);
+uart("PD5", "PD6").write("hi");
+adc("PD4").read();
+pin("PC1").toggle();
+`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if err := checker.Check(program); err != nil {
+		t.Fatalf("check error: %v", err)
+	}
+	out, err := Generate(program)
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+	for _, want := range []string{
+		`pwm_set(pwm_open(JIKA_PIN_PC1), 50);`,
+		`uart_write(uart_open(JIKA_PIN_PD5, JIKA_PIN_PD6), "hi");`,
+		`adc_read(adc_open(JIKA_PIN_PD4));`,
+		`gpio_toggle(JIKA_PIN_PC1);`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in generated C, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestGenerateRejectsMethodCallOnNonPeripheral(t *testing.T) {
+	program, err := parser.ParseProgram(`let x = 5; x.write(1);`)
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	_, genErr := Generate(program)
+	if genErr == nil || !strings.Contains(genErr.Error(), "cannot call method 'write' on this expression") {
+		t.Fatalf("expected explicit codegen error for a method call on a scalar, got %v", genErr)
 	}
 }

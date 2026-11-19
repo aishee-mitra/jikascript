@@ -698,3 +698,66 @@ func TestCheckRejectsPeripheralHandleAsValue(t *testing.T) {
 		}
 	}
 }
+
+func TestCheckRejectsMembersOnScalars(t *testing.T) {
+	cases := []struct {
+		source string
+		want   string
+	}{
+		{`let x = 5; x.write(1);`, "'x' has type int32 and no properties or methods"},
+		{`let x = 5; let y = x.length;`, "'x' has type int32 and no properties or methods"},
+		{`let s = "hi"; s.println("x");`, "'s' has type string and no properties or methods"},
+		{`let b = true; b.toggle();`, "'b' has type boolean and no properties or methods"},
+		{`const c = 10; c.read();`, "'c' has type int32 and no properties or methods"},
+	}
+	for _, tc := range cases {
+		program, err := parser.ParseProgram(tc.source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", tc.source, err)
+		}
+		if err := Check(program); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("expected %q for %q, got %v", tc.want, tc.source, err)
+		}
+	}
+}
+
+func TestCheckValidatesPeripheralConstructorReceivers(t *testing.T) {
+	valid := []string{
+		`pin("PC1").write(1);`,
+		`pin("PC1").toggle();`,
+		`pwm("PC1").set(50);`,
+		`pwm("PC1").setFrequency(1000);`,
+		`uart("PD5", "PD6").write("hi");`,
+		`adc("PD4").read();`,
+	}
+	for _, source := range valid {
+		program, err := parser.ParseProgram(source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", source, err)
+		}
+		if err := Check(program); err != nil {
+			t.Fatalf("expected %q to pass check, got %v", source, err)
+		}
+	}
+
+	invalid := []struct {
+		source string
+		want   string
+	}{
+		{`pin("PC1").foo();`, "unsupported pin method 'foo'"},
+		{`pwm("PC1").foo();`, "unsupported pwm method 'foo'"},
+		{`adc("PD4").foo();`, "unsupported adc method 'foo'"},
+		{`pwm("PC1").set("50");`, "set() argument 1 expects number, got string"},
+		{`uart("PD5", "PD6").write(1);`, "write() argument 1 expects string, got int32"},
+		{`uart("PD5", "PD6").println(1);`, "println() argument 1 expects string, got int32"},
+	}
+	for _, tc := range invalid {
+		program, err := parser.ParseProgram(tc.source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", tc.source, err)
+		}
+		if err := Check(program); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("expected %q for %q, got %v", tc.want, tc.source, err)
+		}
+	}
+}

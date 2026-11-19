@@ -577,7 +577,7 @@ func peripheralConstructorKind(expr ast.Expr) (string, bool) {
 		return "", false
 	}
 	switch ident.Name {
-	case "uart", "pwm", "adc":
+	case "pin", "uart", "pwm", "adc":
 		return ident.Name, true
 	default:
 		return "", false
@@ -1089,6 +1089,25 @@ func shouldSkipExprStmt(expr ast.Expr) bool {
 	return object.Name == "scheduler" && selector.Field == "start"
 }
 
+// peripheralTempFamily reports the peripheral family of a constructor call used
+// directly as a method receiver, e.g. pwm("PC1").set(50). It returns "" for any
+// other expression.
+func peripheralTempFamily(expr ast.Expr) string {
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		return ""
+	}
+	ident, ok := call.Function.(*ast.Identifier)
+	if !ok {
+		return ""
+	}
+	switch ident.Name {
+	case "pin", "uart", "pwm", "adc":
+		return ident.Name
+	}
+	return ""
+}
+
 func renderSelectorCall(call *ast.CallExpr) string {
 	selector, ok := call.Function.(*ast.SelectorExpr)
 	if !ok {
@@ -1111,52 +1130,67 @@ func renderSelectorCall(call *ast.CallExpr) string {
 				return sanitizeName(meta.Name) + "_pop()"
 			}
 		}
-		switch generatedPeripherals[ident.Symbol] {
-		case "uart":
-			switch selector.Field {
-			case "write":
-				return "uart_write(" + object + ", " + strings.Join(args, ", ") + ")"
-			case "println":
-				return "uart_println(" + object + ", " + strings.Join(args, ", ") + ")"
-			case "read":
-				return "uart_read(" + object + ")"
-			}
-			setGenerationErrorf("unsupported uart method '%s'", selector.Field)
-			return ""
-		case "pwm":
-			switch selector.Field {
-			case "set":
-				return "pwm_set(" + object + ", " + strings.Join(args, ", ") + ")"
-			case "setFrequency":
-				return "pwm_set_frequency(" + object + ", " + strings.Join(args, ", ") + ")"
-			}
-			setGenerationErrorf("unsupported pwm method '%s'", selector.Field)
-			return ""
-		case "adc":
-			if selector.Field == "read" {
-				return "adc_read(" + object + ")"
-			}
-			setGenerationErrorf("unsupported adc method '%s'", selector.Field)
-			return ""
-		}
 	}
-	switch selector.Field {
-	case "output":
-		return "gpio_output(" + object + ")"
-	case "input":
-		return "gpio_input(" + object + ")"
-	case "toggle":
-		return "gpio_toggle(" + object + ")"
-	case "read":
-		return "gpio_read(" + object + ")"
-	case "write":
-		if len(args) == 0 {
-			return "gpio_write(" + object + ", 0)"
+
+	// Resolve the receiver's peripheral family. A binding is looked up in the
+	// collector's map; a constructor used directly (pwm("PC1").set(50)) is
+	// recognised from the call itself. Anything else is not a peripheral, so it
+	// must not fall through to the GPIO mapping.
+	family := ""
+	if ident, ok := selector.Object.(*ast.Identifier); ok {
+		family = generatedPeripherals[ident.Symbol]
+	} else {
+		family = peripheralTempFamily(selector.Object)
+	}
+
+	switch family {
+	case "pin":
+		switch selector.Field {
+		case "output":
+			return "gpio_output(" + object + ")"
+		case "input":
+			return "gpio_input(" + object + ")"
+		case "toggle":
+			return "gpio_toggle(" + object + ")"
+		case "read":
+			return "gpio_read(" + object + ")"
+		case "write":
+			if len(args) == 0 {
+				return "gpio_write(" + object + ", 0)"
+			}
+			return "gpio_write(" + object + ", " + strings.Join(args, ", ") + ")"
 		}
-		return "gpio_write(" + object + ", " + strings.Join(args, ", ") + ")"
-	default:
+		setGenerationErrorf("unsupported pin method '%s'", selector.Field)
+		return ""
+	case "uart":
+		switch selector.Field {
+		case "write":
+			return "uart_write(" + object + ", " + strings.Join(args, ", ") + ")"
+		case "println":
+			return "uart_println(" + object + ", " + strings.Join(args, ", ") + ")"
+		case "read":
+			return "uart_read(" + object + ")"
+		}
+		setGenerationErrorf("unsupported uart method '%s'", selector.Field)
+		return ""
+	case "pwm":
+		switch selector.Field {
+		case "set":
+			return "pwm_set(" + object + ", " + strings.Join(args, ", ") + ")"
+		case "setFrequency":
+			return "pwm_set_frequency(" + object + ", " + strings.Join(args, ", ") + ")"
+		}
+		setGenerationErrorf("unsupported pwm method '%s'", selector.Field)
+		return ""
+	case "adc":
+		if selector.Field == "read" {
+			return "adc_read(" + object + ")"
+		}
+		setGenerationErrorf("unsupported adc method '%s'", selector.Field)
 		return ""
 	}
+	setGenerationErrorf("cannot call method '%s' on this expression", selector.Field)
+	return ""
 }
 
 func renderForInit(stmt ast.Stmt) string {

@@ -815,7 +815,9 @@ For every peripheral above, argument counts and types are validated at compile
 time: an erroneous call fails the transpile with a clean error instead of
 reaching the C compiler and failing the firmware build. A peripheral handle is
 an opaque value — it cannot be assigned to a scalar binding or passed as a
-value argument to another peripheral method.
+value argument to another peripheral method. Method calls require a peripheral
+receiver, either a `pin()`, `uart()`, `pwm()`, or `adc()` binding or a
+constructor used directly; a scalar has no properties or methods.
 
 ## 7.5 Future peripherals
 

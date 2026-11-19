@@ -177,7 +177,9 @@ erroneous API use fails with a clean error instead of reaching the C compiler
 and breaking the firmware build. `uart.write`/`println` take a string;
 `pwm.set`/`setFrequency` and `pin.write` take a number; `read` takes none. A
 peripheral handle is opaque: it cannot be assigned to a scalar binding or
-passed as a value argument to another peripheral method.
+passed as a value argument to another peripheral method. Method calls require a
+peripheral receiver — a `pin()`, `uart()`, `pwm()`, or `adc()` binding, or a
+constructor used directly — and scalars have no properties or methods.
 
 ---
 

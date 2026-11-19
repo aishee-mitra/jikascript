@@ -114,7 +114,9 @@ Argument counts and types are checked at transpile time, so erroneous API use
 fails cleanly instead of breaking the C build. `uart.write`/`println` take a
 string; `pwm.set`/`setFrequency` and `pin.write` take a number; `read` takes
 none. A peripheral handle is opaque and cannot be assigned to a scalar or passed
-as a value argument.
+as a value argument. Method calls require a peripheral receiver (a `pin()`,
+`uart()`, `pwm()`, or `adc()` binding or a constructor used directly); scalars
+have no properties or methods.
 
 ## Reserved names
 
