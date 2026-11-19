@@ -1,6 +1,7 @@
-# GPIO & Hardware
+# GPIO, UART, PWM & ADC
 
-Controlling physical pins in JikaScript is as simple as calling methods on an object.
+Controlling pins and peripherals in JikaScript is as simple as calling methods
+on an object.
 
 ```javascript
 const led = pin("PC1");

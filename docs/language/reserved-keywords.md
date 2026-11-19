@@ -31,8 +31,12 @@ The initial language subset reserves the following names:
 - `break`, `continue`
 - `true`, `false`
 - `include`
-- `task`, `pin`, `scheduler`, `start`
+- `task`, `pin`, `uart`, `pwm`, `adc`, `scheduler`, `start`
 - `HIGH`, `LOW` (predefined GPIO state constants)
+
+`uart`, `pwm`, and `adc` are the peripheral constructors, and `pin` is the GPIO
+constructor. See [GPIO, UART, PWM & ADC](../runtime/hardware.md) for the methods
+each one provides.
 
 `HIGH` and `LOW` are built-in pin-state constants, not ordinary user variables.
 They are provided by the compiler and should be treated as fixed values for GPIO

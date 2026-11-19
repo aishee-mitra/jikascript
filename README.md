@@ -25,7 +25,8 @@ Authoritative requirements live in [SPEC.md](SPEC.md).
 - [internal/](internal): lexer, parser, AST, semantic checker, C code generator
 - [internal/backend/platformio/](internal/backend/platformio): PlatformIO build and upload runner
 - [runtime/periodic/](runtime/periodic): standalone pure-C scheduler
-- [targets/ch32fun/](targets/ch32fun): CH32V003 target config and GPIO backend
+- [targets/ch32fun/](targets/ch32fun): CH32V003 target config with GPIO, UART,
+  PWM, and ADC backends
 - [examples/](examples): `.jika` sample programs
 - [skills/jikascript/](skills/jikascript): An agent/skills.sh skill for the
   JikaScript language, CLI, and scheduler. Install it with the standard skills
@@ -239,6 +240,10 @@ Artifacts:
 - [multiple_tasks.jika](examples/multiple_tasks.jika)
 - [conditional_task.jika](examples/conditional_task.jika)
 - [multi-file/app.jika](examples/multi-file/app.jika)
+- [objects.jika](examples/objects.jika)
+- [uart.jika](examples/uart.jika)
+- [pwm.jika](examples/pwm.jika)
+- [adc.jika](examples/adc.jika)
 
 ## Multi-file programs (v0.1)
 
@@ -353,6 +358,36 @@ interrupt context — generated startup calls, in order:
 periodic_init();
 periodic_ch32fun_init();
 ```
+
+## Peripherals (CH32V003)
+
+GPIO, UART, PWM, and ADC are first-class builtins. Each constructor returns a
+handle, and the handle's methods do the work:
+
+```javascript
+const led = pin("PC1");
+const serial = uart("PD5", "PD6");
+const dimmer = pwm("PC1");
+const sensor = adc("PD4");
+
+led.output();
+led.write(HIGH);
+
+serial.println("boot");
+serial.write("ping");
+
+dimmer.set(50);              // duty cycle 0-100
+dimmer.setFrequency(1000);  // Hz
+
+const level = sensor.read();  // 0..1023
+```
+
+Argument counts and types are validated at compile time: `uart.write`/`println`
+take a string, `pwm.set`/`setFrequency` and `pin.write` take a number, and
+`read()` takes none. A wrong argument fails `jikascript check` instead of
+reaching the C compiler and breaking the firmware build. See
+[docs/runtime/hardware.md](docs/runtime/hardware.md) and [SPEC.md](SPEC.md) §7
+for the pin tables and the timer/clock contract.
 
 ## Validation status labels
 

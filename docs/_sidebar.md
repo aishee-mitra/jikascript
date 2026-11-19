@@ -13,7 +13,7 @@
 
 - **Embedded Runtime**
   - [Tasks & Scheduling](runtime/tasks.md)
-  - [GPIO & Hardware](runtime/hardware.md)
+  - [GPIO, UART, PWM & ADC](runtime/hardware.md)
 
 - **Under the Hood**
   - [How Compilation Works](under-the-hood.md)
