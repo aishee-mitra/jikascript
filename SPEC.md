@@ -733,7 +733,8 @@ if (button.read() == LOW) {
 }
 ```
 
-The backend must validate pin names and supported operations.
+The backend must validate pin names and supported operations. `write` takes a
+number, or no argument (meaning `LOW`).
 
 Do not assume all MCUs have identical pin names or peripheral capabilities.
 
@@ -760,7 +761,8 @@ A uart object supports exactly three methods:
 - `read()` returns the next received byte as an `int`, or `-1` when no byte is
   available. Reads are non-blocking.
 
-The backend must validate the pin pair and supported methods.
+The backend must validate the pin pair and supported methods. `write` and
+`println` take a string.
 
 ## 7.3 PWM
 
@@ -783,8 +785,9 @@ A pwm object supports exactly two methods:
 - `setFrequency(hz)` optionally sets the PWM frequency in hertz. The default is
   1000 Hz.
 
-The backend must validate the timer-capable pin and supported methods. PD7 is
-the NRST pin, so using it requires disabling NRST on the target.
+The backend must validate the timer-capable pin and supported methods. `set`
+and `setFrequency` take a number. PD7 is the NRST pin, so using it requires
+disabling NRST on the target.
 
 ## 7.4 ADC
 
@@ -805,7 +808,14 @@ An adc object supports exactly one method:
 - `read()` starts a single-ended conversion and returns the raw 10-bit sample
   (0..1023) as an `int`.
 
-The backend must validate the analog-capable pin and supported methods.
+The backend must validate the analog-capable pin and supported methods. `read`
+takes no arguments.
+
+For every peripheral above, argument counts and types are validated at compile
+time: an erroneous call fails the transpile with a clean error instead of
+reaching the C compiler and failing the firmware build. A peripheral handle is
+an opaque value — it cannot be assigned to a scalar binding or passed as a
+value argument to another peripheral method.
 
 ## 7.5 Future peripherals
 

@@ -108,6 +108,14 @@ Limits: PWM duty is 0-100 percent over a fixed 1000-step period; the frequency
 range is bounded by the 16-bit prescaler; `PD7` needs NRST disabled; `PD4` is
 not a PWM pin because TIM2 is remapped for `PC1`.
 
+## Compile-time validation
+
+Argument counts and types are checked at transpile time, so erroneous API use
+fails cleanly instead of breaking the C build. `uart.write`/`println` take a
+string; `pwm.set`/`setFrequency` and `pin.write` take a number; `read` takes
+none. A peripheral handle is opaque and cannot be assigned to a scalar or passed
+as a value argument.
+
 ## Reserved names
 
 `pin`, `uart`, `pwm`, `adc`, `HIGH`, and `LOW` are reserved or special built-ins;

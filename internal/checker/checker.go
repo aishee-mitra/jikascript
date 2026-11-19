@@ -745,6 +745,9 @@ func checkExpr(expr ast.Expr, scopeStack []map[string]string, functionArity map[
 						if err := checkPeripheralMethodArity(family, sel.Field, len(node.Args), node.Pos); err != nil {
 							return err
 						}
+						if err := checkPeripheralMethodType(family, sel.Field, node.Args, scopeStack, node.Pos); err != nil {
+							return err
+						}
 					}
 				}
 				if binding, exists := lookup(scopeStack, ident.Name); exists && isArrayBinding(binding) {
@@ -1027,6 +1030,18 @@ func classifyBinding(baseKind string, declaredType string, declaredCapacity int,
 		return "", fmt.Errorf("unsupported declared type '%s'", declaredType)
 	}
 
+	// A peripheral handle is an opaque runtime value, not a scalar. Letting it
+	// fall through to the default int32 binding would silently copy the handle
+	// into a plain integer and turn later method calls into GPIO calls on the
+	// wrong object, so reject the assignment outright.
+	if ident, ok := value.(*ast.Identifier); ok && scopeStack != nil {
+		if binding, exists := lookup(scopeStack, ident.Name); exists {
+			if family := peripheralKindOf(binding); family != "" {
+				return "", fmt.Errorf("cannot assign %s peripheral '%s' to a scalar binding", family, ident.Name)
+			}
+		}
+	}
+
 	if declaredCapacity > 0 {
 		elemType := declaredType
 		if elemType == "" {
@@ -1250,6 +1265,50 @@ func checkPeripheralMethodArity(family, method string, argc int, pos ast.Positio
 	case "adc":
 		if method == "read" && argc != 0 {
 			return fmt.Errorf("line %d:%d: read() expects no arguments, got %d", pos.Line, pos.Column, argc)
+		}
+	}
+	return nil
+}
+
+// checkPeripheralMethodType validates the argument types for a peripheral
+// method call. The backends take fixed C types (const char* for uart text,
+// int for pin and pwm values), so a mismatched argument would otherwise reach
+// the C compiler and fail the firmware build instead of failing the transpile.
+// Peripheral handles are rejected explicitly: inferLiteralType does not
+// describe them, but no backend method accepts one as a value argument.
+func checkPeripheralMethodType(family, method string, args []ast.Expr, scopeStack []map[string]string, pos ast.Position) error {
+	var expected string
+	switch family {
+	case "pin":
+		if method == "write" {
+			expected = "number"
+		}
+	case "uart":
+		if method == "write" || method == "println" {
+			expected = "string"
+		}
+	case "pwm":
+		if method == "set" || method == "setFrequency" {
+			expected = "number"
+		}
+	}
+	if expected == "" {
+		return nil
+	}
+	for i, arg := range args {
+		if ident, ok := arg.(*ast.Identifier); ok && scopeStack != nil {
+			if binding, exists := lookup(scopeStack, ident.Name); exists {
+				if handle := peripheralKindOf(binding); handle != "" {
+					return fmt.Errorf("line %d:%d: %s() argument %d expects %s, got %s handle", pos.Line, pos.Column, method, i+1, expected, handle)
+				}
+			}
+		}
+		actual, known := inferLiteralType(arg, scopeStack)
+		if !known {
+			continue
+		}
+		if !typeCompatible(expected, actual) {
+			return fmt.Errorf("line %d:%d: %s() argument %d expects %s, got %s", pos.Line, pos.Column, method, i+1, expected, actual)
 		}
 	}
 	return nil

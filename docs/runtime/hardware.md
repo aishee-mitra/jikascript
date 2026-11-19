@@ -170,6 +170,17 @@ frequencies are scaled by the same error.
 
 ---
 
+## Compile-Time Validation
+
+Argument counts and types are checked when the program is transpiled, so
+erroneous API use fails with a clean error instead of reaching the C compiler
+and breaking the firmware build. `uart.write`/`println` take a string;
+`pwm.set`/`setFrequency` and `pin.write` take a number; `read` takes none. A
+peripheral handle is opaque: it cannot be assigned to a scalar binding or
+passed as a value argument to another peripheral method.
+
+---
+
 ## Example: Button-Controlled LED
 
 Poll a push-button every 20 ms and drive an LED to match its state:

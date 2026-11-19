@@ -630,3 +630,71 @@ const result = add(1, "wrong");`)
 		t.Fatalf("expected incompatible function argument error, got %v", err)
 	}
 }
+
+func TestCheckAcceptsPeripheralArgumentTypes(t *testing.T) {
+	for _, source := range []string{
+		`const led = pwm("PC1"); led.set(50);`,
+		`const led = pwm("PC1"); led.setFrequency(1000);`,
+		`const led = pwm("PC1"); led.set(1.5);`,
+		`const led = pwm("PC1"); let duty = 50; led.set(duty);`,
+		`const serial = uart("PD5", "PD6"); serial.write("hi");`,
+		`const serial = uart("PD5", "PD6"); serial.println("ok");`,
+		`const serial = uart("PD5", "PD6"); let msg = "hi"; serial.write(msg);`,
+		`const led = pin("PC1"); led.write(HIGH);`,
+		`const led = pin("PC1"); led.write();`,
+	} {
+		program, err := parser.ParseProgram(source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", source, err)
+		}
+		if err := Check(program); err != nil {
+			t.Fatalf("expected %q to pass check, got %v", source, err)
+		}
+	}
+}
+
+func TestCheckRejectsPeripheralArgumentTypeMismatch(t *testing.T) {
+	cases := []struct {
+		source string
+		want   string
+	}{
+		{`const led = pwm("PC1"); led.set("50");`, "set() argument 1 expects number, got string"},
+		{`const led = pwm("PC1"); led.set(true);`, "set() argument 1 expects number, got boolean"},
+		{`const led = pwm("PC1"); let duty = "50"; led.set(duty);`, "set() argument 1 expects number, got string"},
+		{`const led = pwm("PC1"); led.setFrequency("fast");`, "setFrequency() argument 1 expects number, got string"},
+		{`const serial = uart("PD5", "PD6"); serial.write(1);`, "write() argument 1 expects string, got int32"},
+		{`const serial = uart("PD5", "PD6"); serial.println(42);`, "println() argument 1 expects string, got int32"},
+		{`const led = pin("PC1"); led.write("HIGH");`, "write() argument 1 expects number, got string"},
+		{`const led = pin("PC1"); led.write(true);`, "write() argument 1 expects number, got boolean"},
+	}
+	for _, tc := range cases {
+		program, err := parser.ParseProgram(tc.source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", tc.source, err)
+		}
+		if err := Check(program); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("expected %q for %q, got %v", tc.want, tc.source, err)
+		}
+	}
+}
+
+func TestCheckRejectsPeripheralHandleAsValue(t *testing.T) {
+	cases := []struct {
+		source string
+		want   string
+	}{
+		{`const serial = uart("PD5", "PD6"); serial.write(serial);`, "write() argument 1 expects string, got uart handle"},
+		{`const led = pwm("PC1"); const serial = uart("PD5", "PD6"); led.set(serial);`, "set() argument 1 expects number, got uart handle"},
+		{`const serial = uart("PD5", "PD6"); let copy = serial;`, "cannot assign uart peripheral 'serial' to a scalar binding"},
+		{`const led = pin("PC1"); let copy = led;`, "cannot assign pin peripheral 'led' to a scalar binding"},
+	}
+	for _, tc := range cases {
+		program, err := parser.ParseProgram(tc.source)
+		if err != nil {
+			t.Fatalf("parse error for %q: %v", tc.source, err)
+		}
+		if err := Check(program); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("expected %q for %q, got %v", tc.want, tc.source, err)
+		}
+	}
+}
